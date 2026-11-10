@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+
+# Node (일부 에이전트 도구가 node 기반일 경우)
+node_modules/
+dist/
+
+# Env
+.env
+.env.*
+!.env.example
+
+# 모델 가중치 / 원본 데이터 / 학습 산출물 (S3·MLflow 사용, git에 넣지 않음)
+*.pt
+*.pth
+*.onnx
+*.ckpt
+*.safetensors
+/weights/
+/data/
+mlruns/
+*.csv
+*.parquet
+
+# OS / IDE
+.DS_Store
+.idea/
+.vscode/

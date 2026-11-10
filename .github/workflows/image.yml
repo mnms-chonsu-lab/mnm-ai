@@ -1,0 +1,31 @@
+name: Build & Push Image
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  packages: write
+  contents: read
+
+jobs:
+  build-push:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: [farm-router, guide-rag, receiver-copilot, inference]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build & push ${{ matrix.service }}
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          # TODO: Dockerfile 경로가 서비스별로 생기면 아래 file 값을 채워주세요 (예: inference/Dockerfile)
+          file: ./Dockerfile.${{ matrix.service }}
+          push: true
+          tags: ghcr.io/mnms-chonsu-lab/mnm-ai-${{ matrix.service }}:latest
