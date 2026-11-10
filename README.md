@@ -35,8 +35,11 @@
 - squash merge만 허용, 머지 후 브랜치 자동 삭제
 - 자세한 규칙은 [CONTRIBUTING.md](./CONTRIBUTING.md) 참고
 
+## 워크플로
+`.github/workflows/`는 비워뒀습니다. 이미지 빌드·push(`image.yml`) 등 필요한 워크플로는 @dooooing이 필요할 때 직접 추가합니다.
+
 ## 연결 방식
-- **mnm-ai → mnm-dev**: `main` 머지 시 GitHub Actions(`image.yml`)로 추론·에이전트 서비스 이미지를 GHCR(`ghcr.io/mnms-chonsu-lab/mnm-ai-*`)에 올립니다. mnm-dev는 태그로 그 이미지를 가져다 씁니다. 입출력 형식은 `schemas/`가 기준이며, mnm-dev는 이 형식을 따릅니다.
+- **mnm-ai → mnm-dev**: `main` 머지 시 GitHub Actions로 추론·에이전트 서비스 이미지를 GHCR(`ghcr.io/mnms-chonsu-lab/mnm-ai-*`)에 올리는 것을 목표로 합니다(워크플로는 추후 추가). mnm-dev는 태그로 그 이미지를 가져다 씁니다. 입출력 형식은 `schemas/`가 기준이며, mnm-dev는 이 형식을 따릅니다.
 - **mnm-data → mnm-ai**: 지식베이스(`knowledge-base/`)·공공데이터는 mnm-data가 관리합니다. `guide_rag` 등에서 참조만 하고 원문을 직접 수정하지 않습니다.
 - `schemas/` 변경은 mnm-dev 담당자(@dooooing, @kkamret)를 PR 리뷰어로 지정합니다.
 - 다른 레포에 영향 주는 PR은 본문에 관련 레포 PR·이슈 링크를 반드시 포함합니다.
