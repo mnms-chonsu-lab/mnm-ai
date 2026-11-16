@@ -1,0 +1,418 @@
+{
+  "endpoint": "/ai/route",
+  "request": {
+    "$defs": {
+      "Cow": {
+        "additionalProperties": false,
+        "properties": {
+          "tag4": {
+            "description": "개체번호 끝 4자리",
+            "title": "Tag4",
+            "type": "string"
+          },
+          "desc": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "농가가 부르는 특징 (예: 큰 암소)",
+            "title": "Desc"
+          },
+          "barn": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "축사 칸",
+            "title": "Barn"
+          }
+        },
+        "required": [
+          "tag4"
+        ],
+        "title": "Cow",
+        "type": "object"
+      },
+      "FarmContext": {
+        "additionalProperties": false,
+        "properties": {
+          "cows": {
+            "items": {
+              "$ref": "#/$defs/Cow"
+            },
+            "title": "Cows",
+            "type": "array"
+          }
+        },
+        "required": [
+          "cows"
+        ],
+        "title": "FarmContext",
+        "type": "object"
+      }
+    },
+    "additionalProperties": false,
+    "description": "이름·전화번호는 넣지 않는다.",
+    "properties": {
+      "text": {
+        "description": "농가 발화 (STT 결과 또는 직접 입력)",
+        "minLength": 1,
+        "title": "Text",
+        "type": "string"
+      },
+      "today": {
+        "description": "상대 날짜 변환 기준일",
+        "format": "date",
+        "title": "Today",
+        "type": "string"
+      },
+      "farm_context": {
+        "$ref": "#/$defs/FarmContext"
+      }
+    },
+    "required": [
+      "text",
+      "today",
+      "farm_context"
+    ],
+    "title": "RouteRequest",
+    "type": "object"
+  },
+  "response": {
+    "$defs": {
+      "BirthFields": {
+        "additionalProperties": false,
+        "properties": {
+          "mother_tag4": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Mother Tag4"
+          },
+          "birth_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Birth Date"
+          },
+          "sex": {
+            "anyOf": [
+              {
+                "enum": [
+                  "암",
+                  "수"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Sex"
+          }
+        },
+        "title": "BirthFields",
+        "type": "object"
+      },
+      "DeathFields": {
+        "additionalProperties": false,
+        "properties": {
+          "cow_tag": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Cow Tag"
+          },
+          "death_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Death Date"
+          }
+        },
+        "title": "DeathFields",
+        "type": "object"
+      },
+      "MoveFields": {
+        "additionalProperties": false,
+        "properties": {
+          "move_type": {
+            "anyOf": [
+              {
+                "enum": [
+                  "sell",
+                  "buy",
+                  "move"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Move Type"
+          },
+          "cow_tag": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Cow Tag"
+          },
+          "move_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Move Date"
+          },
+          "counterpart_farm_no": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Counterpart Farm No"
+          },
+          "counterpart_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Counterpart Name"
+          }
+        },
+        "title": "MoveFields",
+        "type": "object"
+      },
+      "RouteItem": {
+        "additionalProperties": false,
+        "properties": {
+          "category": {
+            "enum": [
+              "사육현황",
+              "접종",
+              "소독",
+              "관찰",
+              "출입",
+              "출생",
+              "폐사",
+              "이동",
+              "메모"
+            ],
+            "title": "Category",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          },
+          "cow_tag4": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "소 목록에 없으면 null",
+            "title": "Cow Tag4"
+          },
+          "vaccine_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Vaccine Type"
+          },
+          "head_count": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Head Count"
+          }
+        },
+        "required": [
+          "category",
+          "value"
+        ],
+        "title": "RouteItem",
+        "type": "object"
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "intent": {
+        "enum": [
+          "diary",
+          "history_report",
+          "symptom"
+        ],
+        "title": "Intent",
+        "type": "string"
+      },
+      "items": {
+        "items": {
+          "$ref": "#/$defs/RouteItem"
+        },
+        "title": "Items",
+        "type": "array"
+      },
+      "report_type": {
+        "anyOf": [
+          {
+            "enum": [
+              "birth",
+              "death",
+              "move"
+            ],
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Report Type"
+      },
+      "report_fields": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/BirthFields"
+          },
+          {
+            "$ref": "#/$defs/DeathFields"
+          },
+          {
+            "$ref": "#/$defs/MoveFields"
+          },
+          {
+            "additionalProperties": true,
+            "type": "object"
+          }
+        ],
+        "description": "report_type 에 맞는 항목. 신고가 아니면 {}",
+        "title": "Report Fields"
+      },
+      "missing": {
+        "description": "말한 개체번호 끝 4자리가 소 목록에 없으면 \"cow\"",
+        "items": {
+          "type": "string"
+        },
+        "title": "Missing",
+        "type": "array"
+      }
+    },
+    "required": [
+      "intent",
+      "items"
+    ],
+    "title": "RouteResponse",
+    "type": "object"
+  },
+  "error": {
+    "additionalProperties": false,
+    "properties": {
+      "code": {
+        "const": "LLM-FAIL",
+        "title": "Code",
+        "type": "string"
+      },
+      "message": {
+        "title": "Message",
+        "type": "string"
+      },
+      "detail": {
+        "anyOf": [
+          {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Detail"
+      }
+    },
+    "required": [
+      "code",
+      "message"
+    ],
+    "title": "RouteErrorResponse",
+    "type": "object"
+  }
+}

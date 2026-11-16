@@ -1,0 +1,62 @@
+{
+  "endpoint": "/ai/stt",
+  "request": {
+    "type": "multipart/form-data",
+    "file": "audio/webm | audio/mp4(m4a), 60초 이하"
+  },
+  "response": {
+    "additionalProperties": false,
+    "properties": {
+      "text": {
+        "minLength": 1,
+        "title": "Text",
+        "type": "string"
+      },
+      "duration_sec": {
+        "maximum": 60,
+        "minimum": 0,
+        "title": "Duration Sec",
+        "type": "number"
+      }
+    },
+    "required": [
+      "text",
+      "duration_sec"
+    ],
+    "title": "SttResponse",
+    "type": "object"
+  },
+  "error": {
+    "additionalProperties": false,
+    "properties": {
+      "code": {
+        "const": "STT-FAIL",
+        "title": "Code",
+        "type": "string"
+      },
+      "message": {
+        "title": "Message",
+        "type": "string"
+      },
+      "detail": {
+        "anyOf": [
+          {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Detail"
+      }
+    },
+    "required": [
+      "code",
+      "message"
+    ],
+    "title": "SttErrorResponse",
+    "type": "object"
+  }
+}

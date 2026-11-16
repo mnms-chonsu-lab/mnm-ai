@@ -1,7 +1,7 @@
 <div align="center">
   <h3>촌수의사 · mnm-ai</h3>
   <p>고령·소규모 한우농가가 말로 남긴 농장 일지를, 신고할 때 접수자(축협·방역기관)에게 한 장 요약으로 함께 전달하는 신고·기록·방역 업무 지원 AI</p>
-  <p><b>LLM 에이전트 · 규칙 코드 · 인식 모델 · MLOps</b></p>
+  <p><b>AI 에이전트 · 규칙 코드 · 인식 모델 · MLOps</b></p>
   <p>
     <img src="https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white" alt="Python" />
     <img src="https://img.shields.io/badge/PyTorch-YOLO11s · SigLIP2-EE4C2C?logo=pytorch&logoColor=white" alt="PyTorch" />
@@ -33,15 +33,15 @@
 
 | 구분 | 구성 | 담당 부분 |
 | --- | --- | --- |
-| LLM 에이전트 3개 | 농가 라우터, 방역 안내 RAG, 접수자 코파일럿 | ① 말로 쓰는 일지 구조화, ② 신고서 초안, ④ 접수자 한 장 요약 |
+| AI 에이전트 3개 (LLM은 2개에 사용) | 농가 라우터(LLM), 방역 안내 RAG(LLM은 조항 ID 고르기만), 접수자 코파일럿(규칙) | ① 말로 쓰는 일지 구조화, ② 신고서 초안, ④ 접수자 한 장 요약 |
 | 규칙 코드 | 신고서 상태 머신, 기한 계산, 질병별 안내 분기, 요약 카드, 미응답 판정, 평소와 다름 알림 | ② 기한 알림, ③ 안내 분기 |
-| 인식 모델 2개 | SigLIP 2 부위 일치 검증(정확도 93.8%), YOLO11s 소 행동 인식(Macro F1 0.857) | 사진 검증, 평소와 다름 알림의 입력 |
+| 인식 모델 2개 | SigLIP 2 부위 일치 검증(시험 81장 정확도 93.8%), YOLO11s 소 행동 인식(학습에 쓰지 않은 영상 14개 Macro F1 0.857, 정밀도 0.94–0.98) | 사진 검증, 평소와 다름 알림의 입력 |
 | MLOps | 학습·평가·MLflow | 모델 성능 기록, 가중치 관리 |
 | 입출력 형식 | `schemas/` | **mnm-dev가 따르는 기준** |
 
 > 모델 지표는 팀이 측정한 값입니다. 측정 조건(데이터 분할·버전)은 🚧 `mlops/eval/`에 정리 예정입니다.
-> 현재 상태: 디렉터리 골격과 README만 있고 코드는 아직 없습니다. 아래 🚧 표시는 모두 구현 예정입니다.
-> 요약 카드·미응답 판정 규칙은 아직 전용 디렉터리가 없습니다 (`rules/` 아래 4개만 존재). 위치는 🚧 정해지면 추가합니다.
+> 현재 상태: 에이전트 3개·규칙 코드·인식 모델 2개·AI 공통(`common/`) 코드와 테스트가 있습니다. 🚧 표시는 구현 예정입니다.
+> 미응답 판정은 `rules/routine_change_alert`, 연락 우선순위는 `rules/contact_priority`, 요약 카드는 `agents/receiver_copilot`에 있습니다.
 
 ---
 
@@ -55,9 +55,10 @@ cp .env.example .env      # OPENAI_API_KEY 등 채우기
 
 | 단계 | 명령 | 상태 |
 | --- | --- | --- |
-| 에이전트 실행 | `agents/*` 의존성 설치·실행 | 🚧 구현 예정 |
-| 규칙 코드 테스트 | `rules/*` 테스트 (`pytest`) | 🚧 구현 예정 |
-| 추론 서비스 | `inference/*` 실행 | 🚧 구현 예정 |
+| 에이전트 테스트 | `agents/*`, `common` 테스트 (`pytest`, 키 없이) | ✅ 4종 61개 통과 (가짜 클라이언트) |
+| 규칙 코드 테스트 | `rules/*` 테스트 (`pytest`) | ✅ 5종 92개 통과 |
+| 추론 모듈 테스트 | `inference/*` 테스트 (`pytest`, 가중치 없이) | ✅ 2종 35개 통과 |
+| 추론 서비스 | `inference/*` 서버·Dockerfile | 🚧 구현 예정 |
 | 학습·평가 | `mlops/train`, `mlops/eval` | 🚧 구현 예정 |
 | MLflow | `mlops/mlflow` 설정 후 `MLFLOW_TRACKING_URI` 지정 | 🚧 구현 예정 |
 | 이미지 빌드·GHCR push | `main` 머지 시 GitHub Actions | 🚧 구현 예정 (워크플로는 @dooooing이 추가) |
@@ -78,6 +79,13 @@ cp .env.example .env      # OPENAI_API_KEY 등 채우기
 | `AWS_REGION` | `mlops/*`, `inference/*` | AWS 리전 | 위와 같음 |
 | `S3_BUCKET_NAME` | `mlops/*`, `inference/*` | 가중치·데이터 버킷 | 위와 같음 |
 | `MLFLOW_TRACKING_URI` | `mlops/*` | MLflow 서버 주소 | 실험·모델 기록 불가 |
+| `ROUTER_MODEL` | `agents/farm_router` | 라우터 모델 (기본 `gpt-5.4-mini`) | 기본값 사용 |
+| `STT_MODEL` | `agents/farm_router` | 음성 인식 모델 (기본 `gpt-transcribe`) | 기본값 사용 |
+| `GUIDE_MODEL` | `agents/guide_rag` | 조항 선택 모델 (기본 `gpt-5.4-mini`) | 기본값 사용 |
+| `GUIDE_EMBED_MODEL` | `agents/guide_rag` | 조항 임베딩 (기본 `text-embedding-3-small`) | 기본값 사용 |
+| `PART_FALLBACK_VISION` | `inference/part_check_siglip2` | 부위 검증 대체 경로(OpenAI Vision) 켜기 (`1`) | 대체 경로 꺼짐 |
+| `PART_VISION_MODEL` | `inference/part_check_siglip2` | 대체 경로 모델 (기본 `gpt-5.4-mini`) | 기본값 사용 |
+| `AI_FORCE_ERROR` | `common` | 지정한 기능을 오류 코드로 강제 응답 (대체 경로 확인용) | 정상 동작 |
 | `DATABASE_URL` | `agents/*` | PostgreSQL 접속 (읽기 용도 예정) | DB 조회 기능 불가 |
 
 ---
@@ -104,6 +112,7 @@ mnm-ai/
 │   ├── farm_router/            # 농가 발화 → 일지·신고서 구조화 라우터
 │   ├── guide_rag/              # SOP·법령 원문 기반 방역 안내 RAG
 │   └── receiver_copilot/       # 접수자 코파일럿
+├── common/                     # AI 공통: 오류 코드 · 호출 로그 · 전화번호 가림
 ├── rules/
 │   ├── report_state_machine/   # 신고서 상태 전이
 │   ├── deadline/               # 신고 기한 계산
