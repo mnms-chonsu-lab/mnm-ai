@@ -1,0 +1,186 @@
+{
+  "endpoint": "/ai/behavior",
+  "request": {
+    "additionalProperties": false,
+    "properties": {
+      "video_url": {
+        "description": "스마트폰 영상 주소 (mp4·mov, HEVC 포함). 처음 10초만 사용",
+        "title": "Video Url",
+        "type": "string"
+      }
+    },
+    "required": [
+      "video_url"
+    ],
+    "title": "BehaviorRequest",
+    "type": "object"
+  },
+  "response": {
+    "$defs": {
+      "BehaviorFrame": {
+        "additionalProperties": false,
+        "properties": {
+          "t": {
+            "description": "영상 내 시각(초)",
+            "minimum": 0,
+            "title": "T",
+            "type": "number"
+          },
+          "label": {
+            "enum": [
+              "stand",
+              "lie",
+              "eat"
+            ],
+            "title": "Label",
+            "type": "string"
+          },
+          "confidence": {
+            "maximum": 1,
+            "minimum": 0,
+            "title": "Confidence",
+            "type": "number"
+          },
+          "bbox": {
+            "description": "방향 보정 후 화면 기준 픽셀 [x1, y1, x2, y2]",
+            "maxItems": 4,
+            "minItems": 4,
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "title": "Bbox",
+            "type": "array"
+          }
+        },
+        "required": [
+          "t",
+          "label",
+          "confidence",
+          "bbox"
+        ],
+        "title": "BehaviorFrame",
+        "type": "object"
+      },
+      "BehaviorSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "stand": {
+            "description": "서기 비율(%), 박스 수 기준",
+            "maximum": 100,
+            "minimum": 0,
+            "title": "Stand",
+            "type": "number"
+          },
+          "lie": {
+            "description": "눕기 비율(%)",
+            "maximum": 100,
+            "minimum": 0,
+            "title": "Lie",
+            "type": "number"
+          },
+          "eat": {
+            "description": "먹기 비율(%)",
+            "maximum": 100,
+            "minimum": 0,
+            "title": "Eat",
+            "type": "number"
+          }
+        },
+        "required": [
+          "stand",
+          "lie",
+          "eat"
+        ],
+        "title": "BehaviorSummary",
+        "type": "object"
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "frames": {
+        "description": "검출된 소 1마리(박스 1개)당 1줄",
+        "items": {
+          "$ref": "#/$defs/BehaviorFrame"
+        },
+        "title": "Frames",
+        "type": "array"
+      },
+      "summary": {
+        "$ref": "#/$defs/BehaviorSummary"
+      },
+      "main_label": {
+        "anyOf": [
+          {
+            "enum": [
+              "stand",
+              "lie",
+              "eat"
+            ],
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "description": "가장 많은 행동, 검출이 없으면 null",
+        "title": "Main Label"
+      },
+      "model_version": {
+        "title": "Model Version",
+        "type": "string"
+      }
+    },
+    "required": [
+      "frames",
+      "summary",
+      "main_label",
+      "model_version"
+    ],
+    "title": "BehaviorResponse",
+    "type": "object"
+  },
+  "error": {
+    "additionalProperties": false,
+    "properties": {
+      "code": {
+        "const": "BEHAVIOR-FAIL",
+        "title": "Code",
+        "type": "string"
+      },
+      "message": {
+        "title": "Message",
+        "type": "string"
+      },
+      "detail": {
+        "anyOf": [
+          {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Detail"
+      }
+    },
+    "required": [
+      "code",
+      "message"
+    ],
+    "title": "BehaviorErrorResponse",
+    "type": "object"
+  }
+}
