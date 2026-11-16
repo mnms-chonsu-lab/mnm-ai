@@ -1,0 +1,499 @@
+{
+  "deadline": {
+    "request": {
+      "additionalProperties": false,
+      "properties": {
+        "event_type": {
+          "enum": [
+            "birth",
+            "death",
+            "move"
+          ],
+          "title": "Event Type",
+          "type": "string"
+        },
+        "event_date": {
+          "description": "출생·폐사·이동한 날",
+          "format": "date",
+          "title": "Event Date",
+          "type": "string"
+        }
+      },
+      "required": [
+        "event_type",
+        "event_date"
+      ],
+      "title": "DeadlineRequest",
+      "type": "object"
+    },
+    "response": {
+      "additionalProperties": false,
+      "properties": {
+        "report_due": {
+          "description": "신고 기한: 발생일 다음 날부터 토·일·공휴일 빼고 5번째 날",
+          "format": "date",
+          "title": "Report Due",
+          "type": "string"
+        },
+        "ear_tag_due": {
+          "anyOf": [
+            {
+              "format": "date",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "귀표 부착 기한 (출생만): 출생 신고일 + 30일",
+          "title": "Ear Tag Due"
+        },
+        "d_day": {
+          "description": "신고 기한 − 오늘. 지나면 음수",
+          "title": "D Day",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "report_due",
+        "d_day"
+      ],
+      "title": "DeadlineResponse",
+      "type": "object"
+    }
+  },
+  "report_state": {
+    "request": {
+      "additionalProperties": false,
+      "properties": {
+        "report_kind": {
+          "description": "birth=출생 신고, suspect=전염병 의심 신고",
+          "enum": [
+            "birth",
+            "suspect"
+          ],
+          "title": "Report Kind",
+          "type": "string"
+        },
+        "fields": {
+          "additionalProperties": true,
+          "description": "지금까지 채워진 항목. 정의되지 않은 키는 거부",
+          "title": "Fields",
+          "type": "object"
+        }
+      },
+      "required": [
+        "report_kind",
+        "fields"
+      ],
+      "title": "ReportStateRequest",
+      "type": "object"
+    },
+    "response": {
+      "additionalProperties": false,
+      "properties": {
+        "fields": {
+          "additionalProperties": true,
+          "description": "검사를 통과한 값. 형식이 틀린 값은 null",
+          "title": "Fields",
+          "type": "object"
+        },
+        "missing": {
+          "description": "비어 있는 필수 항목 (질문 순서)",
+          "items": {
+            "type": "string"
+          },
+          "title": "Missing",
+          "type": "array"
+        },
+        "next_question": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "빈칸 중 첫 번째 하나의 질문 (해요체). 다 차면 null",
+          "title": "Next Question"
+        },
+        "can_submit": {
+          "description": "필수 항목이 모두 차면 true",
+          "title": "Can Submit",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "fields",
+        "missing",
+        "next_question",
+        "can_submit"
+      ],
+      "title": "ReportStateResponse",
+      "type": "object"
+    }
+  },
+  "form6": {
+    "response": {
+      "additionalProperties": false,
+      "description": "가축전염병 예방법 시행규칙 제13조 제1항 각 호.",
+      "properties": {
+        "owner_and_location": {
+          "description": "1. 소유자 성명 및 사육 장소",
+          "title": "Owner And Location",
+          "type": "string"
+        },
+        "species_and_head_count": {
+          "description": "2. 가축의 종류 및 두수",
+          "title": "Species And Head Count",
+          "type": "string"
+        },
+        "condition": {
+          "description": "3. 질병명 칸: 항상 \"발견 당시 상태: …\" (추정 병명 금지)",
+          "title": "Condition",
+          "type": "string"
+        },
+        "found_date": {
+          "description": "4. 폐사일 또는 발견일",
+          "format": "date",
+          "title": "Found Date",
+          "type": "string"
+        },
+        "reporter": {
+          "description": "5. 신고자 성명 및 주소",
+          "title": "Reporter",
+          "type": "string"
+        },
+        "other": {
+          "default": "",
+          "description": "6. 그 밖의 사항",
+          "title": "Other",
+          "type": "string"
+        }
+      },
+      "required": [
+        "owner_and_location",
+        "species_and_head_count",
+        "condition",
+        "found_date",
+        "reporter"
+      ],
+      "title": "Form6",
+      "type": "object"
+    }
+  },
+  "disease_branch": {
+    "request": {
+      "additionalProperties": false,
+      "description": "공식 증상 질문 4개에 대한 예(true)/아니요(false).",
+      "properties": {
+        "drool": {
+          "description": "침 흘림",
+          "title": "Drool",
+          "type": "boolean"
+        },
+        "blister": {
+          "description": "물집",
+          "title": "Blister",
+          "type": "boolean"
+        },
+        "lump": {
+          "description": "혹",
+          "title": "Lump",
+          "type": "boolean"
+        },
+        "feed": {
+          "description": "사료 남김",
+          "title": "Feed",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "drool",
+        "blister",
+        "lump",
+        "feed"
+      ],
+      "title": "SymptomAnswers",
+      "type": "object"
+    },
+    "matched_symptoms": {
+      "additionalProperties": false,
+      "properties": {
+        "count": {
+          "description": "\"예\"로 답한 공식 질문 수 (판정 아님)",
+          "title": "Count",
+          "type": "integer"
+        },
+        "items": {
+          "description": "그 질문의 증상 이름",
+          "items": {
+            "type": "string"
+          },
+          "title": "Items",
+          "type": "array"
+        }
+      },
+      "required": [
+        "count",
+        "items"
+      ],
+      "title": "MatchedSymptoms",
+      "type": "object"
+    },
+    "required_parts_item": {
+      "additionalProperties": false,
+      "properties": {
+        "part": {
+          "description": "mnm-data biosecurity_rule.part_code. 촬영 안내는 kind=photo_guide, part_code 가 같은 행",
+          "enum": [
+            "mouth",
+            "hoof",
+            "flank",
+            "udder"
+          ],
+          "title": "Part",
+          "type": "string"
+        }
+      },
+      "required": [
+        "part"
+      ],
+      "title": "RequiredPart",
+      "type": "object"
+    },
+    "disease_branch": {
+      "additionalProperties": false,
+      "properties": {
+        "disease": {
+          "description": "보여 줄 공식 지침 (mnm-data biosecurity_rule.disease): FMD=구제역, LSD=럼피스킨",
+          "enum": [
+            "FMD",
+            "LSD"
+          ],
+          "title": "Disease",
+          "type": "string"
+        },
+        "stage": {
+          "const": "after_report",
+          "default": "after_report",
+          "description": "조치 문구는 kind=action, disease·stage 가 같은 행을 display_order 순으로 (/ai/guide query 없이 호출)",
+          "title": "Stage",
+          "type": "string"
+        }
+      },
+      "required": [
+        "disease"
+      ],
+      "title": "DiseaseBranch",
+      "type": "object"
+    }
+  },
+  "routine_change": {
+    "diary_entry": {
+      "additionalProperties": false,
+      "properties": {
+        "cow_tag4": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "귀표 끝 4자리",
+          "title": "Cow Tag4"
+        },
+        "category": {
+          "description": "일지 분류 (사육현황·접종·소독·관찰·출입·출생·폐사·이동·메모)",
+          "title": "Category",
+          "type": "string"
+        },
+        "value": {
+          "description": "기록 내용",
+          "title": "Value",
+          "type": "string"
+        },
+        "date": {
+          "format": "date",
+          "title": "Date",
+          "type": "string"
+        }
+      },
+      "required": [
+        "cow_tag4",
+        "category",
+        "value",
+        "date"
+      ],
+      "title": "DiaryEntry",
+      "type": "object"
+    },
+    "response": {
+      "additionalProperties": false,
+      "description": "알림 문구에 쓸 값. '이상·질병' 같은 판정 표현은 만들지 않는다.",
+      "properties": {
+        "cow_tag4": {
+          "title": "Cow Tag4",
+          "type": "string"
+        },
+        "observation": {
+          "description": "관찰 내용 (공백 정리)",
+          "title": "Observation",
+          "type": "string"
+        },
+        "dates": {
+          "description": "기록 날짜들. 같은 날 2번 기록하면 2번 들어감",
+          "items": {
+            "format": "date",
+            "type": "string"
+          },
+          "title": "Dates",
+          "type": "array"
+        }
+      },
+      "required": [
+        "cow_tag4",
+        "observation",
+        "dates"
+      ],
+      "title": "RoutineChange",
+      "type": "object"
+    },
+    "alert_state": {
+      "additionalProperties": false,
+      "properties": {
+        "sent_at": {
+          "format": "date-time",
+          "title": "Sent At",
+          "type": "string"
+        },
+        "viewed_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Viewed At"
+        },
+        "feedback": {
+          "anyOf": [
+            {
+              "enum": [
+                "확인함",
+                "문제 없음"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Feedback"
+        }
+      },
+      "required": [
+        "sent_at"
+      ],
+      "title": "AlertState",
+      "type": "object"
+    }
+  },
+  "contact_priority": {
+    "request_item": {
+      "additionalProperties": false,
+      "properties": {
+        "farm_id": {
+          "title": "Farm Id",
+          "type": "string"
+        },
+        "unresponded": {
+          "description": "알림 미응답 (48시간)",
+          "title": "Unresponded",
+          "type": "boolean"
+        },
+        "days_left": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "가장 가까운 신고 기한까지 남은 일수, 없으면 null",
+          "title": "Days Left"
+        },
+        "head_count": {
+          "description": "사육 두수",
+          "minimum": 0,
+          "title": "Head Count",
+          "type": "integer"
+        },
+        "last_record_date": {
+          "anyOf": [
+            {
+              "format": "date",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Last Record Date"
+        }
+      },
+      "required": [
+        "farm_id",
+        "unresponded",
+        "head_count"
+      ],
+      "title": "FarmIndicator",
+      "type": "object"
+    },
+    "response_item": {
+      "additionalProperties": false,
+      "properties": {
+        "farm_id": {
+          "title": "Farm Id",
+          "type": "string"
+        },
+        "rank": {
+          "title": "Rank",
+          "type": "integer"
+        },
+        "reasons": {
+          "description": "noresp=미응답, due=기한 7일 이내, small=50두 미만",
+          "items": {
+            "enum": [
+              "noresp",
+              "due",
+              "small"
+            ],
+            "type": "string"
+          },
+          "title": "Reasons",
+          "type": "array"
+        }
+      },
+      "required": [
+        "farm_id",
+        "rank",
+        "reasons"
+      ],
+      "title": "PrioritizedFarm",
+      "type": "object"
+    }
+  }
+}
