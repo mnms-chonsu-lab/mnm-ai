@@ -136,3 +136,23 @@ def test_phone_masked_in_prompt():
     c = FakeClient(llm())
     route(REQ.model_copy(update={"text": "수의사 010-1234-5678 에 연락했어"}), c)
     assert "010-1234-5678" not in c.kwargs["input"] and "[전화번호]" in c.kwargs["input"]
+
+
+def test_birth_item_gets_mother_tag_from_report_fields():
+    p = llm(intent="history_report", items=[item(category="출생", value="송아지 출생")],
+            report_type="birth", birth={"mother_tag4": "5678", "birth_date": "2026-11-14", "sex": "암"})
+    out = route(REQ, FakeClient(p))
+    assert out.items[0].cow_tag4 == "5678" and out.report_fields.mother_tag4 == "5678"
+
+
+def test_spoken_tag_normalized_in_prompt():
+    c = FakeClient(llm())
+    route(REQ.model_copy(update={"text": "어젯밤 5, 6, 7, 8번이 송아지 낳았어요"}), c)
+    assert "5678번" in c.kwargs["input"]
+
+
+def test_report_type_forces_history_report_intent():
+    p = llm(intent="diary", items=[item(category="출생", value="송아지 출생", cow_tag4="5678")],
+            report_type="birth", birth={"mother_tag4": "5678", "birth_date": "2026-11-15", "sex": "수"})
+    out = route(REQ, FakeClient(p))
+    assert out.intent == "history_report" and out.report_type == "birth"

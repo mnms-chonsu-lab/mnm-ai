@@ -189,7 +189,7 @@
       },
       "report_fields": {
         "additionalProperties": true,
-        "description": "의심 신고 상태 머신(rules/report_state_machine)의 fields, 빈칸 없음",
+        "description": "의심 신고 상태 머신(rules/report_state_machine)의 fields. 빈칸이 있어도 됨 (빈칸은 form6 에 null, missing 에 칸 이름)",
         "title": "Report Fields",
         "type": "object"
       },
@@ -384,35 +384,70 @@
         "title": "DiaryRecord",
         "type": "object"
       },
-      "Form6": {
+      "Form6Draft": {
         "additionalProperties": false,
-        "description": "가축전염병 예방법 시행규칙 제13조 제1항 각 호.",
+        "description": "제13조 6개 항목. 서버가 넘긴 값에 빈칸이 있으면 그 칸은 null (축협 전달은 그대로 진행, REQ-AI-05).",
         "properties": {
           "owner_and_location": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "description": "1. 소유자 성명 및 사육 장소",
-            "title": "Owner And Location",
-            "type": "string"
+            "title": "Owner And Location"
           },
           "species_and_head_count": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "description": "2. 가축의 종류 및 두수",
-            "title": "Species And Head Count",
-            "type": "string"
+            "title": "Species And Head Count"
           },
           "condition": {
-            "description": "3. 질병명 칸: 항상 \"발견 당시 상태: …\" (추정 병명 금지)",
-            "title": "Condition",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "3. 질병명 칸: 값이 있으면 항상 \"발견 당시 상태: …\" (추정 병명 금지)",
+            "title": "Condition"
           },
           "found_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "description": "4. 폐사일 또는 발견일",
-            "format": "date",
-            "title": "Found Date",
-            "type": "string"
+            "title": "Found Date"
           },
           "reporter": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "description": "5. 신고자 성명 및 주소",
-            "title": "Reporter",
-            "type": "string"
+            "title": "Reporter"
           },
           "other": {
             "default": "",
@@ -428,7 +463,7 @@
           "found_date",
           "reporter"
         ],
-        "title": "Form6",
+        "title": "Form6Draft",
         "type": "object"
       },
       "LatestRecord": {
@@ -492,10 +527,25 @@
         "$ref": "#/$defs/Card"
       },
       "form6": {
-        "$ref": "#/$defs/Form6"
+        "$ref": "#/$defs/Form6Draft"
+      },
+      "missing": {
+        "description": "null 인 form6 칸 이름. 빈칸이 없으면 []",
+        "items": {
+          "enum": [
+            "owner_and_location",
+            "species_and_head_count",
+            "condition",
+            "found_date",
+            "reporter"
+          ],
+          "type": "string"
+        },
+        "title": "Missing",
+        "type": "array"
       },
       "form6_text": {
-        "description": "인터넷 신고서 복사 텍스트 (F-S14·R-P02 '객체 + 텍스트')",
+        "description": "인터넷 신고서 복사 텍스트 (F-S14·R-P02 '객체 + 텍스트'). 빈칸은 '(빈칸)'",
         "title": "Form6 Text",
         "type": "string"
       }

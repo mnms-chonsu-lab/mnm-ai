@@ -55,7 +55,7 @@ cp .env.example .env      # OPENAI_API_KEY 등 채우기
 
 | 단계 | 명령 | 상태 |
 | --- | --- | --- |
-| 에이전트 테스트 | `agents/*`, `common` 테스트 (`pytest`, 키 없이) | ✅ 4종 61개 통과 (가짜 클라이언트) |
+| 에이전트 테스트 | `agents/*`, `common` 테스트 (`pytest`, 키 없이) | ✅ 4종 81개 통과 (가짜 클라이언트) |
 | 규칙 코드 테스트 | `rules/*` 테스트 (`pytest`) | ✅ 5종 92개 통과 |
 | 추론 모듈 테스트 | `inference/*` 테스트 (`pytest`, 가중치 없이) | ✅ 2종 35개 통과 |
 | 추론 서비스 | `inference/*` 서버·Dockerfile | 🚧 구현 예정 |
@@ -80,6 +80,7 @@ cp .env.example .env      # OPENAI_API_KEY 등 채우기
 | `S3_BUCKET_NAME` | `mlops/*`, `inference/*` | 가중치·데이터 버킷 | 위와 같음 |
 | `MLFLOW_TRACKING_URI` | `mlops/*` | MLflow 서버 주소 | 실험·모델 기록 불가 |
 | `ROUTER_MODEL` | `agents/farm_router` | 라우터 모델 (기본 `gpt-5.4-mini`) | 기본값 사용 |
+| `ROUTER_REASONING_EFFORT` | `agents/farm_router` | 라우터 추론 강도 (비우면 모델 기본값) | 기본값 사용 |
 | `STT_MODEL` | `agents/farm_router` | 음성 인식 모델 (기본 `gpt-transcribe`) | 기본값 사용 |
 | `GUIDE_MODEL` | `agents/guide_rag` | 조항 선택 모델 (기본 `gpt-5.4-mini`) | 기본값 사용 |
 | `GUIDE_EMBED_MODEL` | `agents/guide_rag` | 조항 임베딩 (기본 `text-embedding-3-small`) | 기본값 사용 |

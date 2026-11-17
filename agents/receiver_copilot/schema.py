@@ -10,7 +10,6 @@ from typing import Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 from rules.disease_branch.schema import MatchedSymptoms, SymptomAnswers
-from rules.report_state_machine.schema import Form6
 
 Part = Literal["mouth", "udder", "hoof", "flank"]
 
@@ -49,7 +48,7 @@ class SummaryRequest(_Strict):
     symptom_answers: SymptomAnswers
     photos: list[PhotoResult] = Field(default_factory=list)
     diary: list[DiaryRecord] = Field(default_factory=list, description="농장 일지 (최근 14일 이상)")
-    report_fields: dict = Field(description="의심 신고 상태 머신(rules/report_state_machine)의 fields, 빈칸 없음")
+    report_fields: dict = Field(description="의심 신고 상태 머신(rules/report_state_machine)의 fields. 빈칸이 있어도 됨 (빈칸은 form6 에 null, missing 에 칸 이름)")
     farm_total_head: Optional[int] = Field(default=None, ge=1, description="농장 정보의 전체 사육 두수. 있으면 신고서 2호에 괄호로 붙임")
 
 
@@ -72,10 +71,25 @@ class Card(_Strict):
     visit: Optional[LatestRecord] = Field(description="일지 분류 '출입' 중 가장 최근 1건")
 
 
+Form6Key = Literal["owner_and_location", "species_and_head_count", "condition", "found_date", "reporter"]
+
+
+class Form6(_Strict):
+    """제13조 6개 항목. 서버가 넘긴 값에 빈칸이 있으면 그 칸은 null (축협 전달은 그대로 진행, REQ-AI-05)."""
+
+    owner_and_location: Optional[str] = Field(description="1. 소유자 성명 및 사육 장소")
+    species_and_head_count: Optional[str] = Field(description="2. 가축의 종류 및 두수")
+    condition: Optional[str] = Field(description='3. 질병명 칸: 값이 있으면 항상 "발견 당시 상태: …" (추정 병명 금지)')
+    found_date: Optional[dt.date] = Field(description="4. 폐사일 또는 발견일")
+    reporter: Optional[str] = Field(description="5. 신고자 성명 및 주소")
+    other: str = Field(default="", description="6. 그 밖의 사항")
+
+
 class SummaryResponse(_Strict):
     card: Card
     form6: Form6
-    form6_text: str = Field(description="인터넷 신고서 복사 텍스트 (F-S14·R-P02 '객체 + 텍스트')")
+    missing: list[Form6Key] = Field(default_factory=list, description="null 인 form6 칸 이름. 빈칸이 없으면 []")
+    form6_text: str = Field(description="인터넷 신고서 복사 텍스트 (F-S14·R-P02 '객체 + 텍스트'). 빈칸은 '(빈칸)'")
 
 
 class SummaryErrorResponse(_Strict):

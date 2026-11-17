@@ -18,12 +18,14 @@
 | `card.photos` | `/ai/part-check` 결과 `{ part, match }` | REQ-AI-03 |
 | `card.vaccine` · `disinfection` | 일지에서 분류(접종·소독)별 가장 최근 1건 + 며칠 전 | R-S02 |
 | `card.visit` | 일지 분류 `출입` 중 가장 최근 1건 + 며칠 전 | R-S02 |
-| `form6` · `form6_text` | 시행규칙 제13조 6개 항목. 질병명 칸은 `"발견 당시 상태: …"` 고정 (`rules/report_state_machine`) | REQ-AI-05 |
+| `form6` · `form6_text` | 시행규칙 제13조 6개 항목. 질병명 칸은 `"발견 당시 상태: …"` 고정 (`rules/report_state_machine`과 같은 규칙) | REQ-AI-05 |
+| `missing` | `form6` 중 `null`인 칸 이름. 빈칸이 없으면 `[]` | REQ-AI-05 |
 
 - 발견일 뒤의 기록은 쓰지 않습니다.
 - 신고서 2호 두수는 증상이 있거나 죽은 소의 수입니다. 요청에 `farm_total_head`(농장 정보의 전체 사육 두수)가 있으면 괄호로 붙입니다. 예: `한우 1두 (전체 42두)`.
 - 외부 출입은 일지 분류 `출입`(9개 분류 확정, `mnm-data` PR#6)에서 가져옵니다. 별도 `visits` 입력은 없습니다.
-- 의심 신고 항목에 빈칸이 있으면 `LLM-FAIL`(`detail.reason = "report_fields"`)을 반환합니다.
+- 의심 신고 항목에 빈칸이 있어도 실패하지 않습니다. `200` + 빈칸은 `null` + `missing[]`로 돌려주고, `form6_text`에는 `(빈칸)`으로 적습니다 (축협 전달은 그대로 진행, mnm-dev PR #5 합의).
+- `LLM-FAIL`(`detail.reason = "report_fields"`)은 값의 형식이 틀렸을 때만 반환합니다 (예: 날짜가 `YYYY-MM-DD`가 아님).
 
 ## 실행
 

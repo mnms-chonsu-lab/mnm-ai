@@ -70,8 +70,22 @@ def test_seven_day_window_boundary():
     assert [r.value for r in summarize(base(diary=diary)).card.diary_related] == ["6일 전"]
 
 
-def test_blank_report_fields_is_error():
-    rf = dict(base().report_fields, reporter="")
+def test_blank_report_fields_are_null_and_missing():
+    """빈칸은 실패가 아니라 null + missing (mnm-dev PR #5 합의). 나머지 칸은 그대로 채움."""
+    rf = dict(base().report_fields, reporter="", head_count=None)
+    out = summarize(base(report_fields=rf))
+    assert out.missing == ["species_and_head_count", "reporter"]
+    assert out.form6.reporter is None and out.form6.species_and_head_count is None
+    assert out.form6.condition == "발견 당시 상태: 침 흘림, 물집" and out.form6.found_date == D(2026, 11, 15)
+    assert "5. 신고자의 성명 및 주소: (빈칸)" in out.form6_text
+
+
+def test_complete_report_fields_have_no_missing():
+    assert summarize(base()).missing == []
+
+
+def test_bad_date_is_llm_fail():
+    rf = dict(base().report_fields, found_date="11월 15일")
     with pytest.raises(SummaryError) as e:
         summarize(base(report_fields=rf))
     assert e.value.to_response().code == "LLM-FAIL"
@@ -86,3 +100,11 @@ def test_form6_farm_total_in_parentheses():
     out = summarize(base(farm_total_head=42))
     assert out.form6.species_and_head_count == "한우 23두 (전체 42두)"
     assert "2. 신고대상 가축의 종류 및 두수: 한우 23두 (전체 42두)" in out.form6_text
+
+
+def test_complete_draft_matches_rules_form6():
+    """빈칸이 없을 때 결과는 rules 의 build_form6 와 같아야 함."""
+    from rules.report_state_machine.report_state import build_form6
+
+    out = summarize(base(farm_total_head=42))
+    assert out.form6.model_dump() == build_form6(base().report_fields, 42).model_dump()

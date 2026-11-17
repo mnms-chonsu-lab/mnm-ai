@@ -16,6 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from common.ai_call import mask_phone
 
+from .tag_normalize import normalize_tags
 from .schema import (
     Category,
     Intent,
@@ -28,7 +29,7 @@ from .schema import (
 ROUTER_MODEL = os.getenv("ROUTER_MODEL", "gpt-5.4-mini")
 ROUTER_REASONING_EFFORT = os.getenv("ROUTER_REASONING_EFFORT") or None
 TIMEOUT_SEC = 8.0  # 명세 REQ-AI-01·12: 8초 초과 시 LLM-FAIL
-PROMPT_VERSION = "route-v1"
+PROMPT_VERSION = "route-v2"
 MODEL_VERSION = f"{ROUTER_MODEL}+{PROMPT_VERSION}"
 
 
@@ -91,10 +92,14 @@ INSTRUCTIONS = """너는 한우 농가의 말 한 문장을 축산 기록으로 
 - diary: 사육현황·접종·소독·관찰·출입·메모 같은 일지 기록
 - history_report: 출생·폐사·이동(판매·구입·옮김) 이력 신고
 - symptom: 소가 아프거나 평소와 다른 상태를 말함
+- 잘 먹음·잘 서 있음·활발함·컨디션 좋음 같은 정상 상태는 symptom 이 아니라 diary (category 관찰)
+- 소가 죽었다는 말은 폐사 신고 → history_report, report_type death
 
 [items] 말한 내용을 항목으로 나눈다.
 - category 는 사육현황, 접종, 소독, 관찰, 출입, 출생, 폐사, 이동, 메모 중 하나
-- 출입은 차량·사람·업자가 농장에 드나든 기록 (예: 사료 차량 방문, 수의사 방문)
+- 출입은 차량·사람·업자가 실제로 농장에 드나든 기록 (예: 사료 차량 방문, 수의사 방문)
+- 앞으로의 예정이나 물품이 들어왔다는 말만 있으면 메모
+- 한 문장에 소가 여러 마리 나오면 소마다 항목을 따로 만든다 (예: "1234번이랑 5678번 구제역 백신" → 접종 항목 2개)
 - value 는 말한 내용을 짧게. 말하지 않은 내용을 지어내지 않는다
 - cow_tag4 는 발화에 나온 개체번호 끝 4자리. 소 특징(예: 큰 암소)으로 말하면 소 목록의 desc 와 맞는 소의 tag4. 특정할 수 없으면 null
 - 접종이면 vaccine_type 에 백신 종류. 두수를 말했으면 head_count
@@ -120,7 +125,7 @@ def _user_message(req: RouteRequest) -> str:
         f"- tag4={c.tag4}" + (f", desc={c.desc}" if c.desc else "") + (f", barn={c.barn}" if c.barn else "")
         for c in req.farm_context.cows
     ) or "- (없음)"
-    return f"오늘: {req.today.isoformat()} ({'월화수목금토일'[req.today.weekday()]}요일)\n소 목록:\n{cows}\n\n발화: {mask_phone(req.text)}"
+    return f"오늘: {req.today.isoformat()} ({'월화수목금토일'[req.today.weekday()]}요일)\n소 목록:\n{cows}\n\n발화: {normalize_tags(mask_phone(req.text))}"
 
 
 def _last4(tag: Optional[str]) -> Optional[str]:
@@ -177,10 +182,20 @@ def postprocess(out: LlmRoute, req: RouteRequest) -> RouteResponse:
                 fields[k] = check_tag(fields[k])
         if fields.get("mother_tag4") is not None:
             fields["mother_tag4"] = _last4(fields["mother_tag4"])
+        # 신고서 칸에만 번호가 있고 같은 종류의 일지 항목에는 빠진 경우 채운다
+        tag = fields.get("mother_tag4") or _last4(fields.get("cow_tag"))
+        cat = {"birth": "출생", "death": "폐사", "move": "이동"}[out.report_type]
+        if tag:
+            for d in items:
+                if d["category"] == cat and d["cow_tag4"] is None:
+                    d["cow_tag4"] = tag
+
+    # 신고서 항목을 만들었으면 신고 흐름으로 보낸다 (모델이 intent 를 diary 로 둔 경우, 실측 3/50)
+    intent = "history_report" if out.report_type is not None else out.intent
 
     try:
         return RouteResponse(
-            intent=out.intent,
+            intent=intent,
             items=items,
             report_type=out.report_type,
             report_fields=fields,

@@ -5,6 +5,7 @@
 - diary_related    : 같은 개체·최근 7일 (F-S11)
 - vaccine 등       : 분류별 가장 최근 기록 (R-S02 "일지에서 분류별 가장 최근 값")
 - form6            : 시행규칙 제13조 6개 항목 (rules/report_state_machine), 질병명 칸 "발견 당시 상태: …"
+                     빈칸은 실패가 아니라 null + missing (mnm-dev PR #5 합의). 형식이 틀린 값만 LLM-FAIL
 """
 
 from __future__ import annotations
@@ -15,12 +16,12 @@ from typing import Iterable, Optional
 from pydantic import ValidationError
 
 from rules.disease_branch.symptoms import matched_symptoms
-from rules.report_state_machine.report_state import build_form6, form6_copy_text
+from rules.report_state_machine.report_state import FORM6_LABELS, build_form6
 
-from .schema import Card, DiaryRecord, LatestRecord, SummaryErrorResponse, SummaryRequest, SummaryResponse
+from .schema import Card, DiaryRecord, Form6, LatestRecord, SummaryErrorResponse, SummaryRequest, SummaryResponse
 
 RELATED_DAYS = 7  # 명세 F-S11 "같은 개체 최근 7일"
-MODEL_VERSION = "summary-rules-v1"  # 호출 로그(common)용
+MODEL_VERSION = "summary-rules-v2"  # 호출 로그(common)용
 
 
 class SummaryError(Exception):
@@ -62,8 +63,37 @@ def summarize(req: SummaryRequest) -> SummaryResponse:
         disinfection=_latest((r for r in req.diary if r.category == "소독"), found),
         visit=_latest((r for r in req.diary if r.category == "출입"), found),
     )
+    form, missing = draft_form6(req.report_fields, req.farm_total_head)
+    return SummaryResponse(card=card, form6=form, missing=missing, form6_text=draft_copy_text(form))
+
+
+def draft_form6(fields: dict, farm_total_head: Optional[int] = None) -> tuple[Form6, list[str]]:
+    """제13조 6개 항목. 칸을 만드는 규칙은 rules 의 build_form6 와 같고, 빈칸은 null + missing 으로 둔다."""
+    species, head = fields.get("species"), fields.get("head_count")
+    symptoms, found = fields.get("symptoms"), fields.get("found_date")
     try:
-        form = build_form6(req.report_fields, req.farm_total_head)
-    except (ValueError, ValidationError) as e:
-        raise SummaryError("신고서 6개 항목을 만들 수 없음", {"reason": "report_fields", "error": str(e)}) from e
-    return SummaryResponse(card=card, form6=form, form6_text=form6_copy_text(form))
+        found_date = dt.date.fromisoformat(str(found)) if found else None
+    except ValueError as e:
+        raise SummaryError("신고서 항목 형식 오류", {"reason": "report_fields", "field": "found_date"}) from e
+    d = {
+        "owner_and_location": fields.get("owner_and_location") or None,
+        "species_and_head_count": (f"{species} {head}두" + (f" (전체 {farm_total_head}두)" if farm_total_head else ""))
+        if species and head else None,
+        "condition": ("발견 당시 상태: " + ", ".join(symptoms)) if symptoms else None,
+        "found_date": found_date,
+        "reporter": fields.get("reporter") or None,
+        "other": fields.get("other") or "",
+    }
+    missing = [k for k, v in d.items() if v is None]
+    if not missing:  # 빈칸이 없으면 rules 검증(질병명 칸 형식 등)까지 그대로 통과해야 함
+        try:
+            build_form6(fields, farm_total_head)
+        except (ValueError, ValidationError) as e:
+            raise SummaryError("신고서 항목 형식 오류", {"reason": "report_fields", "error": str(e)}) from e
+    return Form6(**d), missing
+
+
+def draft_copy_text(form: Form6) -> str:
+    """인터넷 신고서에 붙여 넣을 복사 텍스트 (F-S14, R-P02). 빈칸은 '(빈칸)'."""
+    d = form.model_dump()
+    return "\n".join(f"{label}: {'(빈칸)' if d[key] is None else (d[key] or '-')}" for key, label in FORM6_LABELS)
