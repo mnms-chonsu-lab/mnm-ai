@@ -59,8 +59,13 @@ AI_FORCE_ERROR=stt,route,part_check,behavior   # 기능 이름 또는 오류 코
 
 설정하면 해당 기능은 모델을 부르지 않고 바로 오류 코드를 돌려줍니다. 서버가 대체 경로로 넘어가는지 확인할 때 씁니다.
 
+| 값 | guide 결과 |
+| --- | --- |
+| `guide`, `RAG-NONE`, `all` | `RAG-NONE` (근거 없음, 404 경로) |
+| `LLM-FAIL` | `LLM-FAIL` (장애, 503 재시도 경로). route·summary도 같이 걸림 |
+
 ## 테스트
 
 ```bash
-python -m pytest -q common   # 18개
+python -m pytest -q common   # 20개
 ```

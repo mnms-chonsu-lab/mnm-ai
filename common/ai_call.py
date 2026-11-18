@@ -30,6 +30,8 @@ FEATURE_ERROR: dict[str, str] = {
     "guide": "RAG-NONE",
     "summary": "LLM-FAIL",
 }
+# 모르는 예외(코드 버그 등)의 오류 코드. guide 는 근거 없음(RAG-NONE)이 아니라 장애(LLM-FAIL)로 본다
+UNEXPECTED_ERROR: dict[str, str] = {**FEATURE_ERROR, "guide": "LLM-FAIL"}
 # 명세 타임아웃: 일반 8초, 부위 검증 1.5초
 TIMEOUT_SEC: dict[str, float] = {"default": 8.0, "part_check": 1.5}
 
@@ -70,11 +72,18 @@ def mask_phone(text: str) -> str:
 
 
 def _forced(feature: str) -> Optional[str]:
-    """AI_FORCE_ERROR=route,stt 처럼 기능 이름 또는 오류 코드를 쉼표로."""
+    """AI_FORCE_ERROR=route,stt 처럼 기능 이름 또는 오류 코드를 쉼표로.
+
+    기능 이름·all 은 그 기능의 기본 코드(guide 는 RAG-NONE). 오류 코드는 그 코드를 낼 수 있는 기능 전부에 적용
+    (LLM-FAIL 이면 route·summary·guide).
+    """
     raw = os.getenv("AI_FORCE_ERROR", "")
     want = {s.strip() for s in raw.split(",") if s.strip()}
     code = FEATURE_ERROR[feature]
-    return code if (feature in want or code in want or "all" in want) else None
+    if feature in want or code in want or "all" in want:
+        return code
+    other = UNEXPECTED_ERROR[feature]
+    return other if other in want else None
 
 
 def _to_error(exc: Exception, feature: str) -> AiErrorResponse:
@@ -83,7 +92,7 @@ def _to_error(exc: Exception, feature: str) -> AiErrorResponse:
         r = exc.to_response()
         d = r.model_dump() if isinstance(r, BaseModel) else dict(r)
         return AiErrorResponse(code=d["code"], message=mask_phone(d["message"]), detail=d.get("detail"))
-    return AiErrorResponse(code=FEATURE_ERROR[feature], message="처리 실패", detail={"type": type(exc).__name__})
+    return AiErrorResponse(code=UNEXPECTED_ERROR[feature], message="처리 실패", detail={"type": type(exc).__name__})
 
 
 def call_ai(

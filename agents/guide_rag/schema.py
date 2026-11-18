@@ -84,7 +84,9 @@ class GuideResponse(_Strict):
 
 
 class GuideErrorResponse(_Strict):
-    code: Literal["RAG-NONE"]
+    code: Literal["RAG-NONE", "LLM-FAIL"] = Field(
+        description="RAG-NONE: 근거 조항 없음 (404). LLM-FAIL: 검색·선택 호출 실패 (503), 시간 초과 (504)"
+    )
     message: str
     detail: Optional[dict] = None
 

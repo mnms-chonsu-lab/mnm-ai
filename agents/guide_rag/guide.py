@@ -3,6 +3,7 @@
 - 게시된 지식베이스 조항만 쓴다.
 - 화면 문구는 조항 원문 그대로. LLM 은 후보 조항 ID 중에서 고르기만 하고 문장을 만들지 않는다.
 - 근거가 없으면 RAG-NONE (fallback = true).
+- 검색·선택 호출 실패, 시간 초과, 키 미설정은 LLM-FAIL (mnm-dev PR #15 합의). 근거 없음과 장애를 나눈다.
 
 질문(query)이 없으면: 질병·단계가 같은 조항을 순서대로 돌려준다 (LLM 미사용).
 질문이 있으면: 임베딩으로 후보 TOP_K 개를 찾고, LLM 이 그중 근거가 되는 조항 ID 만 고른다.
@@ -37,7 +38,7 @@ MODEL_VERSION = f"{EMBED_MODEL}+{SELECT_MODEL}+{PROMPT_VERSION}"  # 호출 로�
 
 
 class GuideNone(Exception):
-    """RAG-NONE. 근거 조항 없음 또는 검색·선택 실패."""
+    """RAG-NONE. 근거 조항 없음 (no_rule, no_evidence)."""
 
     code = "RAG-NONE"
 
@@ -47,7 +48,16 @@ class GuideNone(Exception):
         self.detail = {"fallback": True, **(detail or {})}
 
     def to_response(self) -> GuideErrorResponse:
-        return GuideErrorResponse(code="RAG-NONE", message=self.message, detail=self.detail)
+        return GuideErrorResponse(code=self.code, message=self.message, detail=self.detail)
+
+
+class GuideFail(GuideNone):
+    """LLM-FAIL. 검색·선택 호출 실패 (api, timeout, no_parse, embed, config).
+
+    GuideNone 을 상속해 `except GuideNone` 한 곳에서 둘 다 잡을 수 있다. 응답 code 만 다르다.
+    """
+
+    code = "LLM-FAIL"
 
 
 # ---------------------------------------------------------------------------
@@ -152,12 +162,12 @@ def select(query: str, candidates: Sequence[KbRule], client, model: str = SELECT
             store=False,
         )
     except Exception as e:
-        raise GuideNone("조항 선택 호출 실패", {"reason": "api", "type": type(e).__name__}) from e
+        raise GuideFail("조항 선택 호출 실패", {"reason": "api", "type": type(e).__name__}) from e
     if time.perf_counter() - t0 > TIMEOUT_SEC:
-        raise GuideNone("시간 초과", {"reason": "timeout"})
+        raise GuideFail("시간 초과", {"reason": "timeout"})
     out = getattr(resp, "output_parsed", None)
     if getattr(resp, "status", "completed") != "completed" or out is None:
-        raise GuideNone("조항 선택 결과 없음", {"reason": "no_parse"})
+        raise GuideFail("조항 선택 결과 없음", {"reason": "no_parse"})
     by_id = {r.rule_id: r for r in candidates}
     seen, picked = set(), []
     for i in out.rule_ids:  # 중복 제거, 모델이 고른 순서 유지
@@ -187,7 +197,7 @@ def guide(req: GuideRequest, rules: Sequence[KbRule | dict], client=None, index:
     try:
         candidates = index.top_k(mask_phone(req.query), pool)
     except Exception as e:
-        raise GuideNone("검색 실패", {"reason": "embed", "type": type(e).__name__}) from e
+        raise GuideFail("검색 실패", {"reason": "embed", "type": type(e).__name__}) from e
     picked = select(req.query, candidates, client)
     if not picked:
         raise GuideNone("질문에 맞는 근거 조항 없음", {"reason": "no_evidence"})
@@ -198,5 +208,5 @@ def make_client():
     from openai import OpenAI
 
     if not os.getenv("OPENAI_API_KEY"):
-        raise GuideNone("OPENAI_API_KEY 가 설정되지 않음", {"reason": "config"})
+        raise GuideFail("OPENAI_API_KEY 가 설정되지 않음", {"reason": "config"})
     return OpenAI()

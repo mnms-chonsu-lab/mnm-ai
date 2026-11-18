@@ -55,7 +55,7 @@ cp .env.example .env      # OPENAI_API_KEY 등 채우기
 
 | 단계 | 명령 | 상태 |
 | --- | --- | --- |
-| 에이전트 테스트 | `agents/*`, `common` 테스트 (`pytest`, 키 없이) | ✅ 4종 81개 통과 (가짜 클라이언트) |
+| 에이전트 테스트 | `agents/*`, `common` 테스트 (`pytest`, 키 없이) | ✅ 4종 88개 통과 (가짜 클라이언트) |
 | 규칙 코드 테스트 | `rules/*` 테스트 (`pytest`) | ✅ 5종 92개 통과 |
 | 추론 모듈 테스트 | `inference/*` 테스트 (`pytest`, 가중치 없이) | ✅ 2종 35개 통과 |
 | 추론 서비스 | `inference/*` 서버·Dockerfile | 🚧 구현 예정 |

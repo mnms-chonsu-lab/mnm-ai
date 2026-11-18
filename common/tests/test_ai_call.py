@@ -49,6 +49,12 @@ def test_unknown_exception_uses_feature_code():
     assert res.code == "BEHAVIOR-FAIL" and res.detail == {"type": "ZeroDivisionError"}
 
 
+def test_unknown_exception_in_guide_is_llm_fail():
+    """guide 의 모르는 예외는 근거 없음(RAG-NONE)이 아니라 장애(LLM-FAIL)."""
+    res, log = run("guide", lambda: 1 / 0)
+    assert res.code == "LLM-FAIL" and log.error == "LLM-FAIL"
+
+
 @pytest.mark.parametrize("feature,code", [("stt", "STT-FAIL"), ("route", "LLM-FAIL"), ("part_check", "PART-FAIL"),
                                           ("behavior", "BEHAVIOR-FAIL"), ("guide", "RAG-NONE")])
 def test_forced_errors(monkeypatch, feature, code):
@@ -64,6 +70,15 @@ def test_force_all_and_by_code(monkeypatch):
     monkeypatch.setenv("AI_FORCE_ERROR", "RAG-NONE")
     assert run("guide", lambda: 1)[0].code == "RAG-NONE"
     assert run("stt", lambda: 1)[0] == 1
+
+
+def test_force_llm_fail_covers_guide(monkeypatch):
+    """guide 503 재시도 확인용. 기능 이름 guide 는 RAG-NONE 그대로."""
+    monkeypatch.setenv("AI_FORCE_ERROR", "LLM-FAIL")
+    assert [run(f, lambda: 1)[0].code for f in ("route", "summary", "guide")] == ["LLM-FAIL"] * 3
+    assert run("stt", lambda: 1)[0] == 1
+    monkeypatch.setenv("AI_FORCE_ERROR", "guide")
+    assert run("guide", lambda: 1)[0].code == "RAG-NONE"
 
 
 @pytest.mark.parametrize("s", ["010-1234-5678", "01012345678", "010 1234 5678", "+82 10-1234-5678", "02-123-4567", "031.123.4567"])

@@ -28,7 +28,17 @@
 - DB `embedding` 채우기: `python -m guide_rag.build_embeddings <행.csv|json> <out.sql>` → `UPDATE` 문 SQL. DB 적용은 `mnm-data` 담당.
 - 후보 수 5개는 제안값이며 실측으로 조정합니다.
 
-`RAG-NONE` 반환 조건 (`detail.reason`): `no_rule`(해당 게시 조항 없음), `no_evidence`(모델이 고른 조항 없음), `embed`·`api`·`timeout`·`no_parse`(호출 실패), `config`(키 없음).
+오류 코드 (`detail.reason`, mnm-dev PR #15 합의):
+
+| 코드 | HTTP | `detail.reason` | 뜻 |
+| --- | --- | --- | --- |
+| `RAG-NONE` | 404 | `no_rule` | 해당 질병·단계의 게시 조항 없음 |
+| `RAG-NONE` | 404 | `no_evidence` | 모델이 근거로 고른 조항 없음 |
+| `LLM-FAIL` | 503 | `api`, `embed`, `no_parse`, `config` | 조항 선택 호출 실패, 검색(임베딩) 실패, 선택 결과 없음, 키 없음 |
+| `LLM-FAIL` | 504 | `timeout` | 조항 선택 8초 초과 |
+
+- 두 코드 모두 `detail.fallback = true`. 앱은 고정 안내로 넘어갑니다.
+- 코드에서는 `GuideFail`(LLM-FAIL)이 `GuideNone`(RAG-NONE)을 상속합니다. `except GuideNone`으로 둘 다 잡고, 응답은 `to_response().code`로 나눕니다.
 
 ## 지식베이스 형식 (`KbRule`)
 

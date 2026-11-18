@@ -4,7 +4,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from guide_rag import EmbeddingIndex, GuideNone, GuideRequest, guide
+from guide_rag import EmbeddingIndex, GuideFail, GuideNone, GuideRequest, guide
 
 KB = [
     dict(rule_id="action.fmd.1", kind="action", disease="FMD", stage="after_report", order=1, text="조항 원문 A1",
@@ -82,10 +82,52 @@ def test_llm_cannot_return_unknown_id():
         guide(GuideRequest(disease="FMD", stage="after_report", query="질문"), KB, c)
 
 
-def test_api_failure_is_rag_none():
-    with pytest.raises(GuideNone) as e:
+def test_api_failure_is_llm_fail():
+    with pytest.raises(GuideFail) as e:
         guide(GuideRequest(disease="FMD", stage="after_report", query="질문"), KB, FakeClient(exc=TimeoutError()))
-    assert e.value.detail["reason"] == "api"
+    r = e.value.to_response()
+    assert (r.code, r.detail["reason"], r.detail["fallback"]) == ("LLM-FAIL", "api", True)
+
+
+def test_no_evidence_is_rag_none_not_llm_fail():
+    with pytest.raises(GuideNone) as e:
+        guide(GuideRequest(disease="FMD", stage="after_report", query="질문"), KB, FakeClient(pick=[]))
+    assert not isinstance(e.value, GuideFail)
+    assert (e.value.to_response().code, e.value.detail["reason"]) == ("RAG-NONE", "no_evidence")
+
+
+def test_embed_failure_is_llm_fail():
+    c = FakeClient(pick=["common.1"])
+    c.embeddings = SimpleNamespace(create=lambda **_: (_ for _ in ()).throw(ConnectionError()))
+    with pytest.raises(GuideFail) as e:
+        guide(GuideRequest(disease="FMD", stage="after_report", query="질문"), KB, c)
+    assert (e.value.to_response().code, e.value.detail["reason"]) == ("LLM-FAIL", "embed")
+
+
+def test_no_parse_is_llm_fail():
+    c = FakeClient()
+    c.responses = SimpleNamespace(parse=lambda **_: SimpleNamespace(status="incomplete", output_parsed=None))
+    with pytest.raises(GuideFail) as e:
+        guide(GuideRequest(disease="FMD", stage="after_report", query="질문"), KB, c)
+    assert e.value.detail["reason"] == "no_parse"
+
+
+def test_timeout_is_llm_fail(monkeypatch):
+    import sys
+
+    g = sys.modules["guide_rag.guide"]
+    t = iter([0.0, 9.0])
+    monkeypatch.setattr(g.time, "perf_counter", lambda: next(t))
+    with pytest.raises(GuideFail) as e:
+        g.select("질문", g.published(KB)[:2], FakeClient(pick=["action.fmd.1"]))
+    assert (e.value.to_response().code, e.value.detail["reason"]) == ("LLM-FAIL", "timeout")
+
+
+def test_missing_key_is_llm_fail(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    with pytest.raises(GuideFail) as e:
+        guide(GuideRequest(disease="FMD", stage="after_report", query="질문"), KB)
+    assert (e.value.to_response().code, e.value.detail["reason"]) == ("LLM-FAIL", "config")
 
 
 def test_index_cache_reembeds_only_changed(tmp_path):
