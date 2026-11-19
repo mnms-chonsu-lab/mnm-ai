@@ -323,7 +323,7 @@ def test_server_timeout_logs_once_with_failure_code(make_client, monkeypatch, ca
     assert lines[0]["error"] == "LLM-FAIL" and lines[0]["result_summary"] == "error=server_timeout"
 
 
-@pytest.mark.parametrize("load_error", ["GUIDE_KB_PATH 없음 (게시 조항 0개 → RAG-NONE)", "FileNotFoundError: kb.json"])
+@pytest.mark.parametrize("load_error", ["GUIDE_KB_PATH 없음 (지식베이스 미적재 → 503 not_loaded)", "FileNotFoundError: kb.json"])
 def test_guide_kb_not_loaded_is_503_llm_fail(make_client, load_error):
     with make_client(kb=[], load_errors={"guide": load_error}) as c:
         r = c.post("/ai/guide", json={"disease": "FMD", "stage": "after_report"}, headers=H)

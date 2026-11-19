@@ -97,7 +97,7 @@ def load_models(settings: Settings) -> Models:
     if settings.guide_kb_path:
         models.kb = _try(models, "guide", lambda: load_kb(settings.guide_kb_path)) or []
     else:
-        models.load_errors["guide"] = "GUIDE_KB_PATH 없음 (게시 조항 0개 → RAG-NONE)"
+        models.load_errors["guide"] = "GUIDE_KB_PATH 없음 (지식베이스 미적재 → 503 not_loaded)"
     if models.openai is not None:
         cache = Path(settings.guide_embed_cache) if settings.guide_embed_cache else None
         models.guide_index = _try(models, "guide_index", lambda: EmbeddingIndex(models.openai, cache_path=cache))
