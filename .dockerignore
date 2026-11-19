@@ -1,0 +1,14 @@
+# mlops/serving/Dockerfile 빌드 컨텍스트에서 뺄 것
+.git
+.github
+**/__pycache__
+**/.pytest_cache
+**/tests
+**/eval
+**/*.ipynb
+**/*.pt
+**/*.onnx
+**/data
+.env
+.env.*
+!.env.example
