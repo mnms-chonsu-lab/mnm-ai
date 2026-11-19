@@ -37,6 +37,8 @@ SERVING_REASON_STATUS: dict[str, int] = {
 
 
 def status_for(feature: str, code: str, detail: Optional[dict]) -> int:
+    if code == "RAG-NONE":
+        return 404  # 근거 없음은 언제나 404 (AI_FORCE_ERROR=guide 강제 오류 포함)
     detail = detail or {}
     reason = detail.get("reason")
     if reason in SERVING_REASON_STATUS:

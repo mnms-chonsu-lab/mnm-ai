@@ -21,7 +21,9 @@ def _check_url(url: str, allowed_hosts: tuple[str, ...]) -> None:
     u = urlparse(url)
     if u.scheme not in ("http", "https") or not u.hostname:
         raise FetchError("fetch_rejected", "http(s) 주소만 받을 수 있음")
-    if allowed_hosts and u.hostname.lower() not in allowed_hosts:
+    host = u.hostname.lower()
+    # path-style(kr.object.ncloudstorage.com/버킷/…)과 virtual-hosted(버킷.kr.object.ncloudstorage.com/…) 둘 다 허용
+    if allowed_hosts and not any(host == h or host.endswith("." + h) for h in allowed_hosts):
         raise FetchError("fetch_rejected", "허용하지 않은 호스트")
 
 

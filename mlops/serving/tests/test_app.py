@@ -192,6 +192,7 @@ def test_validation_error_is_422_with_feature_code_and_no_input(make_client):
 
 @pytest.mark.parametrize("url,reason", [
     ("https://evil.test/b/cow.png", "fetch_rejected"),   # 허용 호스트 밖
+    (f"https://{STORAGE}.evil.test/b/cow.png", "fetch_rejected"),  # 허용 호스트로 시작만 하는 주소
     (f"https://{STORAGE}/b/expired.png", "fetch_rejected"),  # 서명 만료 → 403
     ("file:///etc/passwd", "fetch_rejected"),
 ])
@@ -286,3 +287,37 @@ def test_guide_failures_use_llm_fail_but_no_rule_stays_rag_none(make_client):
     assert (bad.status_code, bad.json()["code"]) == (422, "LLM-FAIL")
     assert (unauth.status_code, unauth.json()["code"]) == (401, "LLM-FAIL")
     assert (none.status_code, none.json()["code"]) == (404, "RAG-NONE")
+
+
+def test_virtual_hosted_storage_url_allowed(make_client):
+    with make_client() as c:
+        r = c.post("/ai/part-check", json={"image_url": f"https://bucket.{STORAGE}/b/cow.png", "requested_part": "mouth"},
+                   headers=H)
+    assert r.status_code == 200, r.text
+
+
+def test_forced_rag_none_is_404(make_client, monkeypatch):
+    monkeypatch.setenv("AI_FORCE_ERROR", "guide")
+    with make_client() as c:
+        r = c.post("/ai/guide", json={"disease": "FMD", "stage": "after_report"}, headers=H)
+    assert (r.status_code, r.json()["code"]) == (404, "RAG-NONE")
+
+
+def test_server_timeout_logs_once_with_failure_code(make_client, monkeypatch, caplog):
+    import logging
+    import time
+
+    def slow(body, rules, client=None, index=None):
+        time.sleep(0.4)
+        raise RuntimeError("늦게 끝난 작업")  # 504 뒤에 끝나도 기록되면 안 됨
+
+    monkeypatch.setattr(app_mod, "guide", slow)
+    settings = Settings(internal_token=TOKEN, timeout_sec=0.1)
+    with caplog.at_level(logging.INFO, logger="mnm_ai.calls"):
+        with TestClient(app_mod.create_app(settings=settings, models=Models(kb=KB))) as c:
+            r = c.post("/ai/guide", json={"disease": "FMD", "stage": "after_report"}, headers=H)
+            time.sleep(0.6)  # 뒤에서 돌던 작업이 끝날 때까지
+    assert (r.status_code, r.json()["code"]) == (504, "LLM-FAIL")
+    lines = [json.loads(rec.getMessage()) for rec in caplog.records if rec.name == "mnm_ai.calls"]
+    assert len(lines) == 1
+    assert lines[0]["error"] == "LLM-FAIL" and lines[0]["result_summary"] == "error=server_timeout"

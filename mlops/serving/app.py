@@ -15,6 +15,7 @@ import importlib
 import json
 import logging
 import sys
+import threading
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -111,7 +112,12 @@ def create_app(settings: Optional[Settings] = None, models: Optional[Models] = N
                   fn: Callable[[], Any], summarize_fn: Callable[[Any], str] = lambda r: "ok") -> JSONResponse:
         rid = request.headers.get("x-request-id") or uuid.uuid4().hex[:16]
 
+        timed_out = threading.Event()
+
         def sink(log: AiCallLog) -> None:
+            # 서버 시간 제한으로 504를 먼저 돌려준 호출은, 뒤늦게 끝나도 다시 기록하지 않는다 (기록 1건 = 응답 1건)
+            if timed_out.is_set():
+                return
             call_logger.info(json.dumps({**log.model_dump(), "request_id": rid}, ensure_ascii=False))
 
         limit = settings.timeout_for(feature)
@@ -120,9 +126,10 @@ def create_app(settings: Optional[Settings] = None, models: Optional[Models] = N
                 run_in_threadpool(call_ai, feature, model_version, input_kind, fn, summarize_fn, sink), timeout=limit)
         except asyncio.TimeoutError:
             # 스레드 안의 작업은 멈추지 않고 끝까지 돈다. 응답만 먼저 돌려준다
+            timed_out.set()
             call_logger.info(json.dumps({"feature": feature, "model_version": model_version,
                                          "input_kind": input_kind, "result_summary": "error=server_timeout",
-                                         "latency_ms": int(limit * 1000), "error": FEATURE_ERROR[feature],
+                                         "latency_ms": int(limit * 1000), "error": _code(feature, 504),
                                          "request_id": rid}, ensure_ascii=False))
             return _error(feature, 504, "server_timeout", "시간 초과", limit_sec=limit)
         headers = {"X-Request-Id": rid}

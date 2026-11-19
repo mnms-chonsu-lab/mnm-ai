@@ -48,7 +48,7 @@ curl localhost:8000/health
 | `AI_INTERNAL_TOKEN` | 없음 | `X-Internal-Token` 헤더 값. **비어 있으면 `/ai/*`를 모두 거절** |
 | `AI_TIMEOUT_SEC` | `8` | 서버 시간 제한 (부위 확인 제외) |
 | `AI_PART_CHECK_TIMEOUT_SEC` | `10` | 부위 확인 서버 시간 제한 (모델 1.5초 + Vision 대체 경로) |
-| `AI_FETCH_ALLOWED_HOSTS` | `kr.object.ncloudstorage.com` | 파일을 받을 수 있는 호스트 (쉼표 구분) |
+| `AI_FETCH_ALLOWED_HOSTS` | `kr.object.ncloudstorage.com` | 파일을 받을 수 있는 호스트 (쉼표 구분). 하위 도메인(`버킷.kr.object.ncloudstorage.com`)도 허용 |
 | `AI_MAX_IMAGE_BYTES` · `AI_MAX_VIDEO_BYTES` | 15MB · 200MB | 받는 파일 크기 상한 (제안값, 실측으로 조정) |
 | `AI_LOAD_PART_CHECK` · `AI_LOAD_BEHAVIOR` | `1` | `0`이면 그 모델을 불러오지 않음 |
 | `GUIDE_KB_PATH` | 없음 | 방역 안내 게시 조항 파일 (JSON·JSONL). 없으면 `/ai/guide`는 404 `RAG-NONE` |
@@ -62,7 +62,7 @@ curl localhost:8000/health
 | --- | --- | --- |
 | 200 | 성공 | — |
 | 401 | 내부 토큰 없음·불일치 | `unauthorized` |
-| 404 | 근거 조항 없음 (`RAG-NONE`) | `no_rule`, `no_evidence` |
+| 404 | 근거 조항 없음 (`RAG-NONE`, 강제 오류 포함) | `no_rule`, `no_evidence` |
 | 422 | 입력 때문에 실패. 다시 불러도 같음 | `bad_request`, `silence`, `format`, `open`, `fetch_rejected`(만료된 서명 URL·허용 밖 호스트), `too_large`, `report_fields` |
 | 503 | 외부 API·모델 실패 | `api`, `inference`, `fallback`, `fetch_failed`, `not_loaded`, `config`, 강제 오류(`AI_FORCE_ERROR`) |
 | 504 | 시간 초과 | `timeout`, `server_timeout` |
@@ -70,6 +70,8 @@ curl localhost:8000/health
 - 오류 본문은 모두 `{ code, message, detail }`. 입력값과 서명 URL은 오류·로그에 넣지 않습니다.
 - 재시도는 호출하는 서버가 엔드포인트별로 정합니다 (mnm-dev#5).
 - `X-Request-Id`를 보내면 응답 헤더와 호출 로그(`mnm_ai.calls`)에 그대로 남깁니다.
+- 서버 시간 제한으로 504를 돌려준 호출은 기록 1건만 남깁니다 (뒤에서 끝난 작업은 기록하지 않음).
+- 호출 기록은 지금 로그로만 남깁니다. `inference_log` 테이블 기록은 다음 PR.
 
 ## 테스트
 
