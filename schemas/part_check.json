@@ -1,0 +1,155 @@
+{
+  "endpoint": "/ai/part-check",
+  "request": {
+    "additionalProperties": false,
+    "properties": {
+      "image_url": {
+        "description": "사진 주소 (jpg·png·heic)",
+        "title": "Image Url",
+        "type": "string"
+      },
+      "requested_part": {
+        "description": "앱이 촬영을 요청한 부위",
+        "enum": [
+          "mouth",
+          "udder",
+          "hoof",
+          "flank"
+        ],
+        "title": "Requested Part",
+        "type": "string"
+      }
+    },
+    "required": [
+      "image_url",
+      "requested_part"
+    ],
+    "title": "PartCheckRequest",
+    "type": "object"
+  },
+  "response": {
+    "$defs": {
+      "Quality": {
+        "additionalProperties": false,
+        "properties": {
+          "dark": {
+            "description": "평균 밝기 < 60/255",
+            "title": "Dark",
+            "type": "boolean"
+          },
+          "blurry": {
+            "description": "선명도(라플라시안 분산) < 기준값",
+            "title": "Blurry",
+            "type": "boolean"
+          },
+          "brightness": {
+            "description": "평균 밝기 (0–255)",
+            "maximum": 255,
+            "minimum": 0,
+            "title": "Brightness",
+            "type": "number"
+          }
+        },
+        "required": [
+          "dark",
+          "blurry",
+          "brightness"
+        ],
+        "title": "Quality",
+        "type": "object"
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "requested_part": {
+        "enum": [
+          "mouth",
+          "udder",
+          "hoof",
+          "flank"
+        ],
+        "title": "Requested Part",
+        "type": "string"
+      },
+      "predicted_part": {
+        "description": "모델이 고른 부위. 로그·어드민용, 농가 화면에 노출하지 않음",
+        "enum": [
+          "mouth",
+          "udder",
+          "hoof",
+          "flank"
+        ],
+        "title": "Predicted Part",
+        "type": "string"
+      },
+      "match": {
+        "description": "predicted_part == requested_part 그리고 score >= 기준값",
+        "title": "Match",
+        "type": "boolean"
+      },
+      "score": {
+        "description": "predicted_part 의 점수 softmax(100 × 코사인)",
+        "maximum": 1,
+        "minimum": 0,
+        "title": "Score",
+        "type": "number"
+      },
+      "quality": {
+        "$ref": "#/$defs/Quality"
+      },
+      "model_version": {
+        "title": "Model Version",
+        "type": "string"
+      },
+      "fallback": {
+        "default": false,
+        "description": "대체 경로(OpenAI Vision) 사용 여부",
+        "title": "Fallback",
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "requested_part",
+      "predicted_part",
+      "match",
+      "score",
+      "quality",
+      "model_version"
+    ],
+    "title": "PartCheckResponse",
+    "type": "object"
+  },
+  "error": {
+    "additionalProperties": false,
+    "properties": {
+      "code": {
+        "const": "PART-FAIL",
+        "title": "Code",
+        "type": "string"
+      },
+      "message": {
+        "title": "Message",
+        "type": "string"
+      },
+      "detail": {
+        "anyOf": [
+          {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Detail"
+      }
+    },
+    "required": [
+      "code",
+      "message"
+    ],
+    "title": "PartCheckErrorResponse",
+    "type": "object"
+  }
+}

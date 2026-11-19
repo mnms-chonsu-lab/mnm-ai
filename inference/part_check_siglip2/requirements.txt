@@ -1,0 +1,13 @@
+# 서비스 코드 재현에 쓴 버전 (Colab CPU, 2026-11-14: md5 404/404 · 정확도 0.938 일치)
+transformers==5.22.1
+torch==2.14.1
+pillow==11.3.0
+pillow-heif>=0.18
+sentencepiece
+protobuf
+numpy>=1.26
+pydantic>=2.6
+pytest
+
+# 대체 경로(PART_FALLBACK_VISION=1)를 켤 때만 필요
+openai>=3.51,<4

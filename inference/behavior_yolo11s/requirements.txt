@@ -1,0 +1,6 @@
+# 동작 확인한 버전 (2026-11-12, best.pt + 아이폰 영상 4개)
+ultralytics==8.4.211
+opencv-python-headless==5.0.0.93
+numpy>=1.26
+pydantic>=2.6
+pytest
