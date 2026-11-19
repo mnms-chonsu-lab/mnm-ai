@@ -321,3 +321,24 @@ def test_server_timeout_logs_once_with_failure_code(make_client, monkeypatch, ca
     lines = [json.loads(rec.getMessage()) for rec in caplog.records if rec.name == "mnm_ai.calls"]
     assert len(lines) == 1
     assert lines[0]["error"] == "LLM-FAIL" and lines[0]["result_summary"] == "error=server_timeout"
+
+
+@pytest.mark.parametrize("load_error", ["GUIDE_KB_PATH 없음 (게시 조항 0개 → RAG-NONE)", "FileNotFoundError: kb.json"])
+def test_guide_kb_not_loaded_is_503_llm_fail(make_client, load_error):
+    with make_client(kb=[], load_errors={"guide": load_error}) as c:
+        r = c.post("/ai/guide", json={"disease": "FMD", "stage": "after_report"}, headers=H)
+    assert (r.status_code, r.json()["code"]) == (503, "LLM-FAIL")
+    assert r.json()["detail"] == {"reason": "not_loaded", "load_error": load_error}
+
+
+def test_guide_kb_loaded_but_empty_is_404_rag_none(make_client):
+    with make_client(kb=[]) as c:  # 파일은 읽었는데 게시 조항 0개
+        r = c.post("/ai/guide", json={"disease": "FMD", "stage": "after_report"}, headers=H)
+    assert (r.status_code, r.json()["code"]) == (404, "RAG-NONE")
+
+
+@pytest.mark.parametrize("token", ["토큰".encode(), "tést-token".encode("latin-1")])
+def test_non_ascii_token_is_401_not_500(make_client, token):
+    with make_client() as c:
+        r = c.post("/ai/summary", json=SUMMARY_REQ, headers={"X-Internal-Token": token})
+    assert r.status_code == 401 and r.json()["detail"]["reason"] == "unauthorized"

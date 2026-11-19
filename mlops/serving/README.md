@@ -51,7 +51,7 @@ curl localhost:8000/health
 | `AI_FETCH_ALLOWED_HOSTS` | `kr.object.ncloudstorage.com` | 파일을 받을 수 있는 호스트 (쉼표 구분). 하위 도메인(`버킷.kr.object.ncloudstorage.com`)도 허용 |
 | `AI_MAX_IMAGE_BYTES` · `AI_MAX_VIDEO_BYTES` | 15MB · 200MB | 받는 파일 크기 상한 (제안값, 실측으로 조정) |
 | `AI_LOAD_PART_CHECK` · `AI_LOAD_BEHAVIOR` | `1` | `0`이면 그 모델을 불러오지 않음 |
-| `GUIDE_KB_PATH` | 없음 | 방역 안내 게시 조항 파일 (JSON·JSONL). 없으면 `/ai/guide`는 404 `RAG-NONE` |
+| `GUIDE_KB_PATH` | 없음 | 방역 안내 게시 조항 파일 (JSON·JSONL). 없거나 못 읽으면 `/ai/guide`는 503 `LLM-FAIL` (`not_loaded`), 파일은 있는데 조항 0개면 404 `RAG-NONE` |
 | `GUIDE_EMBED_CACHE` | 없음 | 조항 임베딩 캐시 파일 |
 
 기능 모듈이 쓰는 키(`OPENAI_API_KEY`, `BEHAVIOR_WEIGHTS`, `PART_FALLBACK_VISION` 등)는 각 폴더 README를 봅니다.
@@ -64,7 +64,7 @@ curl localhost:8000/health
 | 401 | 내부 토큰 없음·불일치 | `unauthorized` |
 | 404 | 근거 조항 없음 (`RAG-NONE`, 강제 오류 포함) | `no_rule`, `no_evidence` |
 | 422 | 입력 때문에 실패. 다시 불러도 같음 | `bad_request`, `silence`, `format`, `open`, `fetch_rejected`(만료된 서명 URL·허용 밖 호스트), `too_large`, `report_fields` |
-| 503 | 외부 API·모델 실패 | `api`, `inference`, `fallback`, `fetch_failed`, `not_loaded`, `config`, 강제 오류(`AI_FORCE_ERROR`) |
+| 503 | 외부 API·모델 실패 | `api`, `inference`, `fallback`, `fetch_failed`, `not_loaded`(모델·guide 지식베이스), `config`, 강제 오류(`AI_FORCE_ERROR`) |
 | 504 | 시간 초과 | `timeout`, `server_timeout` |
 
 - 오류 본문은 모두 `{ code, message, detail }`. 입력값과 서명 URL은 오류·로그에 넣지 않습니다.

@@ -93,7 +93,8 @@ def create_app(settings: Optional[Settings] = None, models: Optional[Models] = N
     # ------------------------------------------------------------------ 공통
     def require_token(request: Request) -> None:
         got = request.headers.get("x-internal-token", "")
-        if not settings.internal_token or not hmac.compare_digest(got, settings.internal_token):
+        # 비ASCII 헤더 값이 와도 예외(500) 없이 401 이 나가게 바이트로 비교
+        if not settings.internal_token or not hmac.compare_digest(got.encode(), settings.internal_token.encode()):
             feature = PATH_FEATURE.get(request.url.path, "route")
             raise _Unauthorized(feature)
 
@@ -219,8 +220,14 @@ def create_app(settings: Optional[Settings] = None, models: Optional[Models] = N
     @app.post("/ai/guide", dependencies=auth, tags=["AI 내부"])
     async def guide_(request: Request, body: GuideRequest):
         models = m(request)
-        return await run(request, "guide", guide_mod.MODEL_VERSION, "text",
-                         lambda: guide(body, models.kb, client=models.openai, index=models.guide_index),
+        def fn():
+            # 지식베이스를 못 올렸으면(GUIDE_KB_PATH 없음·읽기 실패) 장애 503. 파일은 있는데 조항 0개면 guide()가 404 RAG-NONE
+            if "guide" in models.load_errors:
+                raise ServingError(UNEXPECTED_ERROR["guide"], "not_loaded", "방역 안내 지식베이스가 서버에 올라와 있지 않음",
+                                   load_error=models.load_errors["guide"])
+            return guide(body, models.kb, client=models.openai, index=models.guide_index)
+
+        return await run(request, "guide", guide_mod.MODEL_VERSION, "text", fn,
                          lambda r: f"rules={len(r.rule_ids)}")
 
     @app.post("/ai/summary", dependencies=auth, tags=["AI 내부"])
