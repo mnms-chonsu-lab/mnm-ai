@@ -18,6 +18,25 @@
 | `breed` 품종 | O | 빈 문자열 불가 |
 | `calf_tag` 송아지 귀표 | 선택 | 번호는 출생 신고 후 위탁기관(지역축협 등)이 부여 (이력제 매뉴얼) |
 
+**폐사 신고 (`death`)**
+
+| 항목 | 필수 | 검사 |
+|---|---|---|
+| `cow_tag` 소 귀표 끝 4자리 | O | 숫자 4개 |
+| `death_date` 폐사일 | O | 날짜, 오늘 이후 불가 |
+
+**양도 (`sell`) · 양수 (`buy`) · 이동 (`move`) 신고**
+
+| 항목 | 필수 | 검사 |
+|---|---|---|
+| `cow_tag` 소 귀표 끝 4자리 | O | 숫자 4개 |
+| `move_date` 보낸 날·받은 날 | O | 날짜, 오늘 이후 불가 |
+| `counterpart_farm_no` 상대 농장식별번호 | 양도·양수 O, 이동 선택 | 빈 문자열 불가 |
+| `counterpart_name` 상대 이름 | 선택 | 빈 문자열 불가 |
+
+- 칸 이름·필수 여부·질문은 `mnm-dev` `FarmerRules`(화면설계서 F-S04Q)와 같습니다.
+- 라우터(`agents/farm_router`)의 `move_type`(sell·buy·move)을 그대로 `report_kind`로 씁니다.
+
 **전염병 의심 신고 (`suspect`)** — 가축전염병 예방법 시행규칙 제13조 제1항
 
 | 항목 | 필수 | 6개 항목 |
@@ -47,5 +66,5 @@ r = report_state("birth", {"mother_tag4": "1234"}, today=date(2026, 11, 12))
 ## 테스트
 
 ```bash
-python -m pytest -q rules/report_state_machine/tests   # 24개 (출생 32가지·의심 64가지 빈칸 조합 포함)
+python -m pytest -q rules/report_state_machine/tests   # 출생·의심·폐사·양도·양수·이동 빈칸 조합 포함
 ```

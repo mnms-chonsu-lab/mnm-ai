@@ -68,9 +68,13 @@
       "additionalProperties": false,
       "properties": {
         "report_kind": {
-          "description": "birth=출생 신고, suspect=전염병 의심 신고",
+          "description": "birth=출생, death=폐사, sell=양도, buy=양수, move=이동, suspect=전염병 의심 신고",
           "enum": [
             "birth",
+            "death",
+            "sell",
+            "buy",
+            "move",
             "suspect"
           ],
           "title": "Report Kind",

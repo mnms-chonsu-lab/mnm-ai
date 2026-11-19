@@ -5,6 +5,11 @@
 
 신고서 종류
 - birth   : 출생 신고 (어미 소, 출생일, 성별, 품종, 송아지 귀표)
+- death   : 폐사 신고 (소, 폐사일)
+- sell    : 양도 신고 (소, 보낸 날, 받는 농장 식별번호)
+- buy     : 양수 신고 (소, 받은 날, 보낸 농장 식별번호)
+- move    : 이동 신고 (소, 옮긴 날. 상대 농장은 선택)
+  폐사·양도·양수·이동 칸 이름·필수 여부·질문은 mnm-dev FarmerRules(F-S04Q)와 같다.
 - suspect : 전염병 의심 신고 — 가축전염병 예방법 시행규칙 제13조 제1항 6개 항목
             1 소유자 성명·사육 장소 / 2 가축 종류·두수 / 3 질병명(미진단 시 발견 당시 상태)
             4 폐사일 또는 발견일 / 5 신고자 성명·주소 / 6 그 밖의 사항(선택)
@@ -79,6 +84,19 @@ def _spec(kind: str, today: date):
             ("sex", True, _sex, "송아지가 암컷이에요, 수컷이에요?"),
             ("breed", True, _text, "송아지 품종을 알려 주세요. 예를 들면 한우예요."),
             ("calf_tag", False, _text, "송아지 귀표 번호를 알려 주세요."),  # 선택: 번호는 출생 신고 후 위탁기관이 부여
+        ]
+    if kind == "death":
+        return [
+            ("cow_tag", True, _tag4, "어느 소인가요? 귀표 끝 4자리를 알려 주세요."),
+            ("death_date", True, _date(today), "소가 죽은 날을 알려 주세요."),
+        ]
+    if kind in ("sell", "buy", "move"):
+        return [
+            ("cow_tag", True, _tag4, "어느 소인가요? 귀표 끝 4자리를 알려 주세요."),
+            ("move_date", True, _date(today), "소를 보내거나 받은 날을 알려 주세요."),
+            # 상대 농장식별번호: 양도·양수는 필수, 이동은 선택 (FarmerRules와 같음)
+            ("counterpart_farm_no", kind != "move", _text, "상대 농장식별번호를 알려 주세요."),
+            ("counterpart_name", False, _text, None),
         ]
     if kind == "suspect":
         return [

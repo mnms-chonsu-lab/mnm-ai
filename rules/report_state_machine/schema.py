@@ -13,7 +13,9 @@ class _Strict(BaseModel):
 
 
 class ReportStateRequest(_Strict):
-    report_kind: Literal["birth", "suspect"] = Field(description="birth=출생 신고, suspect=전염병 의심 신고")
+    report_kind: Literal["birth", "death", "sell", "buy", "move", "suspect"] = Field(
+        description="birth=출생, death=폐사, sell=양도, buy=양수, move=이동, suspect=전염병 의심 신고"
+    )
     fields: dict = Field(description="지금까지 채워진 항목. 정의되지 않은 키는 거부")
 
 

@@ -29,6 +29,14 @@ SUSPECT_FULL = {
 }
 SUSPECT_ORDER = list(SUSPECT_FULL)
 
+DEATH_FULL = {"cow_tag": "5678", "death_date": "2026-11-11"}
+MOVE_FULL = {
+    "cow_tag": "5678",
+    "move_date": "2026-11-11",
+    "counterpart_farm_no": "123456",  # 가상 번호
+    "counterpart_name": "이한우 (가상)",
+}
+
 
 def _subsets(full):
     keys = list(full)
@@ -36,15 +44,33 @@ def _subsets(full):
         yield {k: full[k] for k, m in zip(keys, mask) if m}
 
 
-OPTIONAL = {"calf_tag"}  # 출생 신고 송아지 귀표는 선택
+# 종류별 선택 항목 (출생 송아지 귀표는 출생 신고 후 위탁기관이 부여)
+OPTIONAL = {
+    "birth": {"calf_tag"},
+    "suspect": set(),
+    "death": set(),
+    "sell": {"counterpart_name"},
+    "buy": {"counterpart_name"},
+    "move": {"counterpart_farm_no", "counterpart_name"},
+}
 
 
-@pytest.mark.parametrize("kind,full,order", [("birth", BIRTH_FULL, BIRTH_ORDER), ("suspect", SUSPECT_FULL, SUSPECT_ORDER)])
+@pytest.mark.parametrize(
+    "kind,full,order",
+    [
+        ("birth", BIRTH_FULL, BIRTH_ORDER),
+        ("suspect", SUSPECT_FULL, SUSPECT_ORDER),
+        ("death", DEATH_FULL, list(DEATH_FULL)),
+        ("sell", MOVE_FULL, list(MOVE_FULL)),
+        ("buy", MOVE_FULL, list(MOVE_FULL)),
+        ("move", MOVE_FULL, list(MOVE_FULL)),
+    ],
+)
 def test_every_blank_combination(kind, full, order):
     n = 0
     for given in _subsets(full):
         r = report_state(kind, given, TODAY)
-        expected_missing = [k for k in order if k not in given and k not in OPTIONAL]
+        expected_missing = [k for k in order if k not in given and k not in OPTIONAL[kind]]
         assert r.missing == expected_missing
         assert r.can_submit == (not expected_missing)
         if expected_missing:
@@ -52,7 +78,7 @@ def test_every_blank_combination(kind, full, order):
         else:
             assert r.next_question is None
         n += 1
-    assert n == 2 ** len(full)  # 출생 32가지, 의심 64가지
+    assert n == 2 ** len(full)  # 출생 32, 의심 64, 폐사 4, 양도·양수·이동 각 16가지
 
 
 def test_next_question_is_first_missing_only():
@@ -100,6 +126,32 @@ def test_suspect_empty_symptom_list_is_blank():
 def test_other_is_optional():
     r = report_state("suspect", SUSPECT_FULL, TODAY)
     assert r.can_submit and r.fields["other"] is None
+
+
+@pytest.mark.parametrize(
+    "kind,field,bad",
+    [
+        ("death", "cow_tag", "12"),
+        ("death", "death_date", "2026-11-13"),  # 미래
+        ("sell", "move_date", "그저께"),  # 날짜로 변환 안 된 말
+        ("buy", "counterpart_farm_no", "  "),
+    ],
+)
+def test_death_move_invalid_value_is_blank(kind, field, bad):
+    full = DEATH_FULL if kind == "death" else MOVE_FULL
+    r = report_state(kind, {**full, field: bad}, TODAY)
+    assert r.missing == [field] and not r.can_submit
+
+
+def test_move_can_submit_without_counterpart():
+    r = report_state("move", {"cow_tag": "5678", "move_date": "2026-11-11"}, TODAY)
+    assert r.can_submit and r.fields["counterpart_farm_no"] is None
+
+
+def test_sell_asks_counterpart_farm_no():
+    r = report_state("sell", {"cow_tag": "5678", "move_date": "2026-11-11"}, TODAY)
+    assert r.missing == ["counterpart_farm_no"]
+    assert r.next_question == "상대 농장식별번호를 알려 주세요."
 
 
 def test_unknown_field_rejected():
