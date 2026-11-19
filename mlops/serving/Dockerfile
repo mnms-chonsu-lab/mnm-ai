@@ -15,8 +15,10 @@ RUN apt-get update \
 
 WORKDIR /app
 
-# torch 는 CPU 전용 휠을 먼저 설치 (기본 휠은 CUDA 포함이라 수 GB)
-RUN pip install --no-cache-dir torch==2.14.1 --index-url https://download.pytorch.org/whl/cpu
+# torch·torchvision 은 CPU 전용 휠을 같은 저장소에서 같이 설치 (기본 휠은 CUDA 포함이라 수 GB)
+# torchvision 을 따로 두면 ultralytics 의존성으로 PyPI(CUDA 빌드)판이 깔려 torch 와 짝이 안 맞음
+#   → `operator torchvision::nms does not exist` (부위 확인 AutoProcessor·YOLO NMS 실패)
+RUN pip install --no-cache-dir torch==2.14.1 torchvision --index-url https://download.pytorch.org/whl/cpu
 
 # 의존성 먼저 (코드만 바뀌면 이 층은 다시 받지 않음)
 COPY agents/farm_router/requirements.txt agents/farm_router/
@@ -25,7 +27,8 @@ COPY agents/receiver_copilot/requirements.txt agents/receiver_copilot/
 COPY inference/part_check_siglip2/requirements.txt inference/part_check_siglip2/
 COPY inference/behavior_yolo11s/requirements.txt inference/behavior_yolo11s/
 COPY mlops/serving/requirements.txt mlops/serving/
-RUN pip install --no-cache-dir -r mlops/serving/requirements.txt
+RUN pip install --no-cache-dir -r mlops/serving/requirements.txt \
+ && python -c "import torch, torchvision, transformers; torchvision.ops.nms(torch.zeros(1, 4), torch.zeros(1), 0.5); assert transformers.utils.is_torchvision_available(); print('torch', torch.__version__, 'torchvision', torchvision.__version__)"
 
 COPY common/ common/
 COPY rules/ rules/
