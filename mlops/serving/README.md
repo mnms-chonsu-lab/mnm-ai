@@ -13,6 +13,7 @@ AI 기능 6개를 내부 API로 여는 FastAPI 서버입니다. `services/api`(S
 | `models.py` | 시작할 때 1회 불러오는 모델·OpenAI 클라이언트·지식베이스 |
 | `fetch.py` | 사진·영상 주소(Object Storage 서명 URL)에서 파일 받기 |
 | `errors.py` | 기능별 `detail.reason` → HTTP 상태 코드 |
+| `inference_log.py` | AI 호출 기록 → DB `inference_log` (백그라운드 쓰기) |
 | `config.py` | 환경변수 |
 
 기능 로직은 새로 만들지 않고 `agents/`·`inference/`의 진입 함수를 `common.call_ai`로 감싸 부릅니다.
@@ -25,7 +26,7 @@ AI 기능 6개를 내부 API로 여는 FastAPI 서버입니다. `services/api`(S
 | `POST /ai/behavior` | `behavior_yolo11s.analyze_video` | `video_url` → 임시 파일 |
 | `POST /ai/guide` | `guide_rag.guide` | `GUIDE_KB_PATH` 조항 목록 사용 |
 | `POST /ai/summary` | `receiver_copilot.summarize` | JSON 그대로 |
-| `GET /health` | — | 토큰 없이 열림. 불러온 모델 버전과 못 불러온 이유 |
+| `GET /health` | — | 토큰 없이 열림. 불러온 모델 버전과 못 불러온 이유, `inference_log` 기록 상태 |
 
 ## 실행
 
@@ -53,8 +54,28 @@ curl localhost:8000/health
 | `AI_LOAD_PART_CHECK` · `AI_LOAD_BEHAVIOR` | `1` | `0`이면 그 모델을 불러오지 않음 |
 | `GUIDE_KB_PATH` | 없음 | 방역 안내 게시 조항 파일 (JSON·JSONL). 없거나 못 읽으면 `/ai/guide`는 503 `LLM-FAIL` (`not_loaded`), 파일은 있는데 조항 0개면 404 `RAG-NONE` |
 | `GUIDE_EMBED_CACHE` | 없음 | 조항 임베딩 캐시 파일 |
+| `AI_LOG_DB_URL` | 없음 | `inference_log` 기록 DB 주소 (`postgresql://계정:비밀번호@호스트:5432/DB`). INSERT 전용 계정. 비우면 DB에 기록하지 않고 로그 줄만 남김 |
 
 기능 모듈이 쓰는 키(`OPENAI_API_KEY`, `BEHAVIOR_WEIGHTS`, `PART_FALLBACK_VISION` 등)는 각 폴더 README를 봅니다.
+
+## AI 호출 기록 (`inference_log`)
+
+어드민 A-S07(AI 호출 로그)과 계산식 ⑪(AI 오류율 = 실패 호출 수 ÷ 전체 호출 수)의 원천입니다. 테이블은 mnm-data `migrations/0001_init_operational.sql`.
+
+| 컬럼 | 값 |
+| --- | --- |
+| `feature` | `stt` · `route` · `part_check` · `behavior` · `guide` · `summary` |
+| `model_version` | 각 모듈의 `MODEL_VERSION` |
+| `input_kind` | `audio/webm` · `text` · `image` · `video` · `json` |
+| `result_summary` | 코드·개수만 (예: `match=True fallback=False`, 서버 시간 초과는 `error=server_timeout`) |
+| `latency_ms` | 처리 시간 (서버 시간 초과는 제한값) |
+| `error` | 실패하면 오류 코드 (`PART-FAIL` 등), 성공하면 비움 |
+| `at` | 호출 시각 (UTC) |
+
+- 호출 1건 = 기록 1건. 서버 시간 제한(504)을 먼저 돌려준 호출은 뒤늦게 끝나도 다시 기록하지 않습니다.
+- 응답을 기다리게 하지 않습니다. 큐에 넣고 백그라운드 스레드가 50건씩 씁니다. 큐가 1,000건을 넘거나 DB 쓰기가 실패하면 그 기록은 버리고 `/health`의 `inference_log.dropped`로 셉니다 (제안값, 실측으로 조정).
+- 원문(발화·사진·영상·주소)과 `request_id`는 DB에 넣지 않습니다. `request_id`는 로그 줄(`mnm_ai.calls`)에만 남습니다.
+- 실패 원인은 클래스 이름만 남깁니다 (오류 문구에 접속 정보가 섞일 수 있어서).
 
 ## 상태 코드
 

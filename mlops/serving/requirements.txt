@@ -3,6 +3,7 @@ fastapi>=0.115
 uvicorn[standard]>=0.30
 httpx>=0.27
 python-multipart>=0.0.9
+psycopg[binary]>=3.2  # inference_log 기록 (AI_LOG_DB_URL 을 줄 때만 사용)
 -r ../../agents/farm_router/requirements.txt
 -r ../../agents/guide_rag/requirements.txt
 -r ../../agents/receiver_copilot/requirements.txt

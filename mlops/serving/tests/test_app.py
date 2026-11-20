@@ -342,3 +342,132 @@ def test_non_ascii_token_is_401_not_500(make_client, token):
     with make_client() as c:
         r = c.post("/ai/summary", json=SUMMARY_REQ, headers={"X-Internal-Token": token})
     assert r.status_code == 401 and r.json()["detail"]["reason"] == "unauthorized"
+
+
+# ---------------------------------------------------------------------------- inference_log
+from mlops.serving.inference_log import InferenceLogWriter, to_row  # noqa: E402
+
+
+class FakeConn:
+    """psycopg 연결 대신 넣은 행을 모은다. fail=True 면 쓰기에서 예외."""
+
+    def __init__(self, store, fail=False):
+        self.store, self.fail, self.closed = store, fail, False
+
+    def cursor(self):
+        conn = self
+
+        class Cur:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def executemany(self, sql, rows):
+                if conn.fail:
+                    raise ConnectionError("postgresql://user:secret@db 연결 실패")  # 비밀값이 섞인 문구
+                assert sql.startswith("INSERT INTO inference_log")
+                conn.store.extend(rows)
+
+        return Cur()
+
+    def commit(self):
+        pass
+
+    def close(self):
+        self.closed = True
+
+
+def writer(store, fail=lambda: False, **kw):
+    return InferenceLogWriter("postgresql://test", connect=lambda dsn: FakeConn(store, fail()), retry_sec=(0,), **kw)
+
+
+def test_inference_log_off_without_db_url(make_client):
+    with make_client() as c:
+        r = c.get("/health")
+        ok = c.post("/ai/summary", json=SUMMARY_REQ, headers=H)
+    assert ok.status_code == 200
+    assert r.json()["inference_log"] == {"enabled": False}
+
+
+def test_inference_log_writes_one_row_per_call(tmp_path):
+    rows: list = []
+    w = writer(rows)
+    models = Models(embedder=FakeEmbedder(), detector=fake_detector, kb=KB, http=storage({"/b/cow.png": png_bytes()}))
+    settings = Settings(internal_token=TOKEN, fetch_allowed_hosts=(STORAGE,))
+    with TestClient(app_mod.create_app(settings=settings, models=models, log_writer=w)) as c:
+        ok = c.post("/ai/summary", json=SUMMARY_REQ, headers={**H, "X-Request-Id": "rid-1"})
+        bad = c.post("/ai/part-check", json={"image_url": f"https://{STORAGE}/b/none.png", "requested_part": "mouth"},
+                     headers=H)
+        assert w.flush()
+        health = c.get("/health").json()["inference_log"]
+    assert ok.status_code == 200 and bad.status_code >= 400
+    assert [r["feature"] for r in rows] == ["summary", "part_check"]
+    assert rows[0]["error"] is None and rows[0]["result_summary"].startswith("missing=")
+    assert rows[1]["error"] == bad.json()["code"]
+    assert set(rows[0]) == {"feature", "model_version", "input_kind", "result_summary", "latency_ms", "error", "at"}
+    assert all("rid-1" not in str(v) and STORAGE not in str(v) for r in rows for v in r.values())  # 주소·request_id 없음
+    assert health["enabled"] and health["written"] == 2 and health["dropped"] == 0
+
+
+def test_inference_log_db_failure_does_not_block_response(make_client):
+    rows: list = []
+    w = writer(rows, fail=lambda: True)
+    with TestClient(app_mod.create_app(settings=Settings(internal_token=TOKEN), models=Models(kb=KB), log_writer=w)) as c:
+        r = c.post("/ai/summary", json=SUMMARY_REQ, headers=H)
+        assert w.flush()
+        health = c.get("/health").json()["inference_log"]
+    assert r.status_code == 200
+    assert rows == [] and health["dropped"] == 1
+    assert health["last_error"] == "ConnectionError" and "secret" not in json.dumps(health)
+
+
+def test_inference_log_reconnects_after_failure():
+    rows: list = []
+    calls = iter([True, False])
+    w = writer(rows, fail=lambda: next(calls))
+    w.put({"feature": "summary", "model_version": "v", "input_kind": "json", "result_summary": "a", "latency_ms": 1})
+    assert w.flush()
+    w.put({"feature": "summary", "model_version": "v", "input_kind": "json", "result_summary": "b", "latency_ms": 1})
+    assert w.flush()
+    w.close()
+    assert [r["result_summary"] for r in rows] == ["b"] and w.dropped == 1 and w.written == 1
+
+
+def test_inference_log_timeout_writes_once(monkeypatch):
+    import time
+
+    def slow(body):
+        time.sleep(0.4)
+
+    rows: list = []
+    w = writer(rows)
+    monkeypatch.setattr(app_mod, "summarize", slow)
+    with TestClient(app_mod.create_app(settings=Settings(internal_token=TOKEN, timeout_sec=0.1), models=Models(kb=KB),
+                                       log_writer=w)) as c:
+        r = c.post("/ai/summary", json=SUMMARY_REQ, headers=H)
+        time.sleep(0.6)
+        assert w.flush()
+    assert r.status_code == 504
+    assert len(rows) == 1 and rows[0]["result_summary"] == "error=server_timeout" and rows[0]["latency_ms"] == 100
+
+
+def test_inference_log_queue_full_drops_and_counts():
+    w = InferenceLogWriter("")  # 꺼진 상태: 아무것도 안 함
+    w.put({"feature": "summary"})
+    assert w.status() == {"enabled": False}
+    w = InferenceLogWriter("postgresql://test", connect=lambda dsn: (_ for _ in ()).throw(AssertionError), queue_max=1,
+                           retry_sec=(0,))
+    w._stop.set()  # 쓰기 스레드를 멈춰서 큐가 차게 만든다
+    w._thread.join(1)
+    w.put({"feature": "summary"})
+    w.put({"feature": "summary"})
+    assert w.dropped == 1 and w.status()["queued"] == 1
+
+
+def test_inference_log_row_truncated_to_column_size():
+    row = to_row({"feature": "summary", "model_version": "v" * 80, "input_kind": "x" * 40, "result_summary": "s" * 900,
+                  "latency_ms": 5, "request_id": "rid"})
+    assert len(row["model_version"]) == 50 and len(row["input_kind"]) == 30 and len(row["result_summary"]) == 500
+    assert "request_id" not in row and row["at"].tzinfo is not None
