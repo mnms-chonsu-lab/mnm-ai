@@ -1,0 +1,594 @@
+{
+  "endpoint": "/ai/summary",
+  "request": {
+    "$defs": {
+      "CowInfo": {
+        "additionalProperties": false,
+        "properties": {
+          "tag4": {
+            "title": "Tag4",
+            "type": "string"
+          },
+          "desc": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Desc"
+          },
+          "barn": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Barn"
+          }
+        },
+        "required": [
+          "tag4"
+        ],
+        "title": "CowInfo",
+        "type": "object"
+      },
+      "DiaryRecord": {
+        "additionalProperties": false,
+        "properties": {
+          "cow_tag4": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "개체 기록이 아니면 null (예: 축사 소독)",
+            "title": "Cow Tag4"
+          },
+          "category": {
+            "description": "mnm-data diary_entry.category. '신고'는 서버 자동 기록",
+            "enum": [
+              "사육현황",
+              "접종",
+              "소독",
+              "관찰",
+              "출입",
+              "출생",
+              "폐사",
+              "이동",
+              "신고",
+              "메모"
+            ],
+            "title": "Category",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          },
+          "date": {
+            "format": "date",
+            "title": "Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "cow_tag4",
+          "category",
+          "value",
+          "date"
+        ],
+        "title": "DiaryRecord",
+        "type": "object"
+      },
+      "PhotoResult": {
+        "additionalProperties": false,
+        "properties": {
+          "part": {
+            "description": "요청 부위",
+            "enum": [
+              "mouth",
+              "udder",
+              "hoof",
+              "flank"
+            ],
+            "title": "Part",
+            "type": "string"
+          },
+          "match": {
+            "description": "/ai/part-check 결과",
+            "title": "Match",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "part",
+          "match"
+        ],
+        "title": "PhotoResult",
+        "type": "object"
+      },
+      "SymptomAnswers": {
+        "additionalProperties": false,
+        "description": "공식 증상 질문 4개에 대한 예(true)/아니요(false).",
+        "properties": {
+          "drool": {
+            "description": "침 흘림",
+            "title": "Drool",
+            "type": "boolean"
+          },
+          "blister": {
+            "description": "물집",
+            "title": "Blister",
+            "type": "boolean"
+          },
+          "lump": {
+            "description": "혹",
+            "title": "Lump",
+            "type": "boolean"
+          },
+          "feed": {
+            "description": "사료 남김",
+            "title": "Feed",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "drool",
+          "blister",
+          "lump",
+          "feed"
+        ],
+        "title": "SymptomAnswers",
+        "type": "object"
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "record_id": {
+        "description": "승인된 소 상태 기록 ID",
+        "title": "Record Id",
+        "type": "string"
+      },
+      "found_date": {
+        "description": "발견일 (관련 일지 기준일)",
+        "format": "date",
+        "title": "Found Date",
+        "type": "string"
+      },
+      "cow": {
+        "$ref": "#/$defs/CowInfo"
+      },
+      "symptom_answers": {
+        "$ref": "#/$defs/SymptomAnswers"
+      },
+      "photos": {
+        "items": {
+          "$ref": "#/$defs/PhotoResult"
+        },
+        "title": "Photos",
+        "type": "array"
+      },
+      "diary": {
+        "description": "농장 일지 (최근 14일 이상)",
+        "items": {
+          "$ref": "#/$defs/DiaryRecord"
+        },
+        "title": "Diary",
+        "type": "array"
+      },
+      "report_fields": {
+        "additionalProperties": true,
+        "description": "의심 신고 상태 머신(rules/report_state_machine)의 fields. 빈칸이 있어도 됨 (빈칸은 form6 에 null, missing 에 칸 이름)",
+        "title": "Report Fields",
+        "type": "object"
+      },
+      "farm_total_head": {
+        "anyOf": [
+          {
+            "minimum": 1,
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "농장 정보의 전체 사육 두수. 있으면 신고서 2호에 괄호로 붙임",
+        "title": "Farm Total Head"
+      }
+    },
+    "required": [
+      "record_id",
+      "found_date",
+      "cow",
+      "symptom_answers",
+      "report_fields"
+    ],
+    "title": "SummaryRequest",
+    "type": "object"
+  },
+  "response": {
+    "$defs": {
+      "Card": {
+        "additionalProperties": false,
+        "properties": {
+          "cow": {
+            "$ref": "#/$defs/CowInfo"
+          },
+          "matched_symptoms": {
+            "description": "\"예\"로 답한 공식 증상 이름 (판정 아님)",
+            "items": {
+              "type": "string"
+            },
+            "title": "Matched Symptoms",
+            "type": "array"
+          },
+          "diary_related": {
+            "description": "같은 개체, found_date 포함 최근 7일, 최근순",
+            "items": {
+              "$ref": "#/$defs/DiaryRecord"
+            },
+            "title": "Diary Related",
+            "type": "array"
+          },
+          "photos": {
+            "items": {
+              "$ref": "#/$defs/PhotoResult"
+            },
+            "title": "Photos",
+            "type": "array"
+          },
+          "vaccine": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/LatestRecord"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "가장 최근 접종 기록"
+          },
+          "disinfection": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/LatestRecord"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "가장 최근 소독 기록"
+          },
+          "visit": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/LatestRecord"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "일지 분류 '출입' 중 가장 최근 1건"
+          }
+        },
+        "required": [
+          "cow",
+          "matched_symptoms",
+          "diary_related",
+          "photos",
+          "vaccine",
+          "disinfection",
+          "visit"
+        ],
+        "title": "Card",
+        "type": "object"
+      },
+      "CowInfo": {
+        "additionalProperties": false,
+        "properties": {
+          "tag4": {
+            "title": "Tag4",
+            "type": "string"
+          },
+          "desc": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Desc"
+          },
+          "barn": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Barn"
+          }
+        },
+        "required": [
+          "tag4"
+        ],
+        "title": "CowInfo",
+        "type": "object"
+      },
+      "DiaryRecord": {
+        "additionalProperties": false,
+        "properties": {
+          "cow_tag4": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "개체 기록이 아니면 null (예: 축사 소독)",
+            "title": "Cow Tag4"
+          },
+          "category": {
+            "description": "mnm-data diary_entry.category. '신고'는 서버 자동 기록",
+            "enum": [
+              "사육현황",
+              "접종",
+              "소독",
+              "관찰",
+              "출입",
+              "출생",
+              "폐사",
+              "이동",
+              "신고",
+              "메모"
+            ],
+            "title": "Category",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          },
+          "date": {
+            "format": "date",
+            "title": "Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "cow_tag4",
+          "category",
+          "value",
+          "date"
+        ],
+        "title": "DiaryRecord",
+        "type": "object"
+      },
+      "Form6Draft": {
+        "additionalProperties": false,
+        "description": "제13조 6개 항목. 서버가 넘긴 값에 빈칸이 있으면 그 칸은 null (축협 전달은 그대로 진행, REQ-AI-05).",
+        "properties": {
+          "owner_and_location": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "1. 소유자 성명 및 사육 장소",
+            "title": "Owner And Location"
+          },
+          "species_and_head_count": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "2. 가축의 종류 및 두수",
+            "title": "Species And Head Count"
+          },
+          "condition": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "3. 질병명 칸: 값이 있으면 항상 \"발견 당시 상태: …\" (추정 병명 금지)",
+            "title": "Condition"
+          },
+          "found_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "4. 폐사일 또는 발견일",
+            "title": "Found Date"
+          },
+          "reporter": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "5. 신고자 성명 및 주소",
+            "title": "Reporter"
+          },
+          "other": {
+            "default": "",
+            "description": "6. 그 밖의 사항",
+            "title": "Other",
+            "type": "string"
+          }
+        },
+        "required": [
+          "owner_and_location",
+          "species_and_head_count",
+          "condition",
+          "found_date",
+          "reporter"
+        ],
+        "title": "Form6Draft",
+        "type": "object"
+      },
+      "LatestRecord": {
+        "additionalProperties": false,
+        "properties": {
+          "date": {
+            "format": "date",
+            "title": "Date",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          },
+          "days_ago": {
+            "description": "found_date 기준 며칠 전",
+            "minimum": 0,
+            "title": "Days Ago",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "date",
+          "value",
+          "days_ago"
+        ],
+        "title": "LatestRecord",
+        "type": "object"
+      },
+      "PhotoResult": {
+        "additionalProperties": false,
+        "properties": {
+          "part": {
+            "description": "요청 부위",
+            "enum": [
+              "mouth",
+              "udder",
+              "hoof",
+              "flank"
+            ],
+            "title": "Part",
+            "type": "string"
+          },
+          "match": {
+            "description": "/ai/part-check 결과",
+            "title": "Match",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "part",
+          "match"
+        ],
+        "title": "PhotoResult",
+        "type": "object"
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "card": {
+        "$ref": "#/$defs/Card"
+      },
+      "form6": {
+        "$ref": "#/$defs/Form6Draft"
+      },
+      "missing": {
+        "description": "null 인 form6 칸 이름. 빈칸이 없으면 []",
+        "items": {
+          "enum": [
+            "owner_and_location",
+            "species_and_head_count",
+            "condition",
+            "found_date",
+            "reporter"
+          ],
+          "type": "string"
+        },
+        "title": "Missing",
+        "type": "array"
+      },
+      "form6_text": {
+        "description": "인터넷 신고서 복사 텍스트 (F-S14·R-P02 '객체 + 텍스트'). 빈칸은 '(빈칸)'",
+        "title": "Form6 Text",
+        "type": "string"
+      }
+    },
+    "required": [
+      "card",
+      "form6",
+      "form6_text"
+    ],
+    "title": "SummaryResponse",
+    "type": "object"
+  },
+  "error": {
+    "additionalProperties": false,
+    "properties": {
+      "code": {
+        "const": "LLM-FAIL",
+        "title": "Code",
+        "type": "string"
+      },
+      "message": {
+        "title": "Message",
+        "type": "string"
+      },
+      "detail": {
+        "anyOf": [
+          {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Detail"
+      }
+    },
+    "required": [
+      "code",
+      "message"
+    ],
+    "title": "SummaryErrorResponse",
+    "type": "object"
+  }
+}
