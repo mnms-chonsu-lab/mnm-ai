@@ -143,6 +143,13 @@ def test_death_move_invalid_value_is_blank(kind, field, bad):
     assert r.missing == [field] and not r.can_submit
 
 
+def test_full_tag_accepted():
+    r = report_state("death", {**DEATH_FULL, "cow_tag": "900000010871"}, TODAY)
+    assert r.can_submit and r.fields["cow_tag"] == "900000010871"
+    r = report_state("birth", {**BIRTH_FULL, "mother_tag4": "12345"}, TODAY)
+    assert r.missing == ["mother_tag4"]
+
+
 def test_move_can_submit_without_counterpart():
     r = report_state("move", {"cow_tag": "5678", "move_date": "2026-11-11"}, TODAY)
     assert r.can_submit and r.fields["counterpart_farm_no"] is None

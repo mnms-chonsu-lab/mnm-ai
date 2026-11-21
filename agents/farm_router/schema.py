@@ -23,6 +23,22 @@ def _tag4(v: Optional[str]) -> Optional[str]:
     return v
 
 
+_TAG12 = re.compile(r"^\d{12}$")
+
+
+def _tag12(v: Optional[str]) -> Optional[str]:
+    if v is not None and not _TAG12.match(v):
+        raise ValueError("귀표 12자리는 숫자 12개여야 합니다")
+    return v
+
+
+def _said_tag(v: Optional[str]) -> Optional[str]:
+    """신고서 소 칸: 말한 번호 그대로 (끝 4자리 또는 12자리)."""
+    if v is not None and not (_TAG4.match(v) or _TAG12.match(v)):
+        raise ValueError("개체번호는 숫자 4개(끝 4자리) 또는 12개(귀표 전체)여야 합니다")
+    return v
+
+
 class _Strict(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -32,10 +48,18 @@ class _Strict(BaseModel):
 # ---------------------------------------------------------------------------
 class Cow(_Strict):
     tag4: str = Field(description="개체번호 끝 4자리")
+    tag: Optional[str] = Field(default=None, description="귀표 12자리. 끝 4자리가 겹치는 소를 12자리로 구분할 때 씀. 모르면 null")
     desc: Optional[str] = Field(default=None, description="농가가 부르는 특징 (예: 큰 암소)")
     barn: Optional[str] = Field(default=None, description="축사 칸")
 
     _v = field_validator("tag4")(_tag4)
+    _v12 = field_validator("tag")(_tag12)
+
+    @model_validator(mode="after")
+    def _tag_ends_with_tag4(self):
+        if self.tag is not None and self.tag[-4:] != self.tag4:
+            raise ValueError("tag 의 끝 4자리가 tag4 와 다릅니다")
+        return self
 
 
 class FarmContext(_Strict):
@@ -53,32 +77,38 @@ class RouteRequest(_Strict):
 class RouteItem(_Strict):
     category: Category
     value: str
-    cow_tag4: Optional[str] = Field(default=None, description="소 목록에 없으면 null")
+    cow_tag4: Optional[str] = Field(default=None, description="소 목록에 없거나, 끝 4자리가 같은 소가 2마리 이상이라 정할 수 없으면 null")
+    cow_tag: Optional[str] = Field(default=None, description="소가 정해졌고 소 목록에 12자리(tag)가 있으면 그 12자리. 아니면 null")
     vaccine_type: Optional[str] = None
     head_count: Optional[int] = Field(default=None, ge=0)
 
     _v = field_validator("cow_tag4")(_tag4)
+    _v12 = field_validator("cow_tag")(_tag12)
 
 
 class BirthFields(_Strict):
-    mother_tag4: Optional[str] = None
+    mother_tag4: Optional[str] = Field(default=None, description="어미 소. 말한 번호 그대로 (끝 4자리 또는 12자리)")
     birth_date: Optional[date] = None
     sex: Optional[Literal["암", "수"]] = None
 
-    _v = field_validator("mother_tag4")(_tag4)
+    _v = field_validator("mother_tag4")(_said_tag)
 
 
 class DeathFields(_Strict):
-    cow_tag: Optional[str] = None
+    cow_tag: Optional[str] = Field(default=None, description="말한 번호 그대로 (끝 4자리 또는 12자리)")
     death_date: Optional[date] = None
+
+    _v = field_validator("cow_tag")(_said_tag)
 
 
 class MoveFields(_Strict):
     move_type: Optional[Literal["sell", "buy", "move"]] = None
-    cow_tag: Optional[str] = None
+    cow_tag: Optional[str] = Field(default=None, description="말한 번호 그대로 (끝 4자리 또는 12자리)")
     move_date: Optional[date] = None
     counterpart_farm_no: Optional[str] = None
     counterpart_name: Optional[str] = None
+
+    _v = field_validator("cow_tag")(_said_tag)
 
 
 REPORT_FIELDS: dict[str, type[_Strict]] = {"birth": BirthFields, "death": DeathFields, "move": MoveFields}
@@ -91,7 +121,7 @@ class RouteResponse(_Strict):
     report_fields: Union[BirthFields, DeathFields, MoveFields, dict] = Field(
         default_factory=dict, description="report_type 에 맞는 항목. 신고가 아니면 {}"
     )
-    missing: list[str] = Field(default_factory=list, description='말한 개체번호 끝 4자리가 소 목록에 없으면 "cow"')
+    missing: list[str] = Field(default_factory=list, description='말한 개체번호가 소 목록에 없거나, 끝 4자리만 말했는데 같은 소가 2마리 이상이면 "cow"')
 
     @model_validator(mode="before")
     @classmethod
