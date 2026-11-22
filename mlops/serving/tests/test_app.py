@@ -491,12 +491,23 @@ def test_call_window_counts_and_expires():
 def test_health_calls_5m_counts_model_calls_only(make_client):
     with make_client() as c:
         ok = c.post("/ai/summary", json=SUMMARY_REQ, headers=H)
-        fail = c.post("/ai/part-check", json={"image_url": f"https://{STORAGE}/b/none.png", "requested_part": "mouth"},
-                      headers=H)
+        rejected = c.post("/ai/part-check", json={"image_url": f"https://{STORAGE}/b/none.png", "requested_part": "mouth"},
+                          headers=H)  # 없는 사진 → 422 fetch_rejected: 호출 수에만
         bad = c.post("/ai/summary", json={"record_id": "r-1"}, headers=H)  # 형식 오류: 세지 않음
         noauth = c.post("/ai/summary", json=SUMMARY_REQ)  # 토큰 없음: 세지 않음
         stats = c.get("/health").json()["calls_5m"]
-    assert (ok.status_code, bad.status_code, noauth.status_code) == (200, 422, 401) and fail.status_code >= 400
+    assert (ok.status_code, rejected.status_code, bad.status_code, noauth.status_code) == (200, 422, 422, 401)
+    assert rejected.json()["detail"]["reason"] == "fetch_rejected"
+    assert stats == {"window_sec": 300, "calls": 2, "failures": 0, "error_rate": 0.0}
+
+
+def test_health_calls_5m_failures_are_503_504_only(make_client):
+    """#14 @kkamret: 실패 = AI 장애(503·504)만. 404 근거 없음은 호출 수에만."""
+    with make_client(detector=None, load_errors={"behavior": "BEHAVIOR_WEIGHTS 없음"}) as c:
+        down = c.post("/ai/behavior", json={"video_url": f"https://{STORAGE}/b/cow.mp4"}, headers=H)  # 503 not_loaded
+        none = c.post("/ai/guide", json={"disease": "LSD", "stage": "after_report"}, headers=H)  # 404 RAG-NONE
+        stats = c.get("/health").json()["calls_5m"]
+    assert (down.status_code, none.status_code) == (503, 404)
     assert stats == {"window_sec": 300, "calls": 2, "failures": 1, "error_rate": 0.5}
 
 

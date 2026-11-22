@@ -1,7 +1,8 @@
 """최근 5분 AI 호출 수·실패 수 (계산식 ⑪ AI 오류율의 알람용, `/health` 의 `calls_5m`).
 
 - 모델 처리까지 간 호출만 센다 (`record()` 에서 더함). 요청 형식 오류(422 bad_request)·토큰 오류(401)는 세지 않는다.
-- 실패 = 기록의 `error` 가 있는 호출 (서버 시간 초과 504 포함).
+- 실패 = AI 장애만: 응답 상태 503(저장소 연결 실패·모델 미로드 등)·504(시간 초과).
+  404(근거 없음 RAG-NONE)·422(무음·열 수 없는 파일·만료된 주소)는 호출 수에만 넣는다 (mnm-ai#14 @kkamret 결정).
 - 메모리에만 둔다. 서버를 재시작하면 0부터 다시 센다 (24시간 오류율은 DB `inference_log` 로 계산).
 """
 
@@ -13,6 +14,7 @@ from collections import deque
 from typing import Optional
 
 WINDOW_SEC = 300  # 명세 ⑪ "알람은 5분 창"
+FAILURE_STATUSES = frozenset({503, 504})
 
 
 class CallWindow:
