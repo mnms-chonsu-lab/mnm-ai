@@ -50,6 +50,7 @@ from part_check_siglip2.schema import PartCheckRequest  # noqa: E402
 from .config import Settings  # noqa: E402
 from .errors import ServingError, status_for  # noqa: E402
 from .fetch import FetchError, fetch, suffix_of, to_tempfile  # noqa: E402
+from .inference_log import InferenceLogWriter  # noqa: E402
 from .models import Models, load_models  # noqa: E402
 
 logger = logging.getLogger("mnm_ai.serving")
@@ -73,7 +74,8 @@ def _error(feature: str, status: int, reason: str, message: str, **extra) -> JSO
     return JSONResponse(status_code=status, content=body)
 
 
-def create_app(settings: Optional[Settings] = None, models: Optional[Models] = None) -> FastAPI:
+def create_app(settings: Optional[Settings] = None, models: Optional[Models] = None,
+               log_writer: Optional[InferenceLogWriter] = None) -> FastAPI:
     settings = settings or Settings.from_env()
 
     @asynccontextmanager
@@ -83,7 +85,11 @@ def create_app(settings: Optional[Settings] = None, models: Optional[Models] = N
         if not settings.internal_token:
             logger.warning("AI_INTERNAL_TOKEN 이 비어 있어 /ai/* 요청을 모두 거절합니다")
         app.state.models = models if models is not None else await run_in_threadpool(load_models, settings)
+        app.state.log_writer = log_writer if log_writer is not None else InferenceLogWriter(settings.log_db_url)
+        if not app.state.log_writer.enabled:
+            logger.warning("AI_LOG_DB_URL 이 비어 있어 inference_log 를 DB에 기록하지 않습니다")
         yield
+        await run_in_threadpool(app.state.log_writer.close)
         app.state.models.close()
 
     app = FastAPI(title="mnm-ai 내부 API", version="0.1.0", lifespan=lifespan,
@@ -115,11 +121,16 @@ def create_app(settings: Optional[Settings] = None, models: Optional[Models] = N
 
         timed_out = threading.Event()
 
+        def record(log: dict) -> None:
+            # 로그 줄(request_id 포함)은 항상 남기고, DB 기록은 켜져 있을 때만 (응답을 기다리게 하지 않음)
+            call_logger.info(json.dumps({**log, "request_id": rid}, ensure_ascii=False))
+            request.app.state.log_writer.put(log)
+
         def sink(log: AiCallLog) -> None:
             # 서버 시간 제한으로 504를 먼저 돌려준 호출은, 뒤늦게 끝나도 다시 기록하지 않는다 (기록 1건 = 응답 1건)
             if timed_out.is_set():
                 return
-            call_logger.info(json.dumps({**log.model_dump(), "request_id": rid}, ensure_ascii=False))
+            record(log.model_dump(mode="json"))
 
         limit = settings.timeout_for(feature)
         try:
@@ -128,10 +139,9 @@ def create_app(settings: Optional[Settings] = None, models: Optional[Models] = N
         except asyncio.TimeoutError:
             # 스레드 안의 작업은 멈추지 않고 끝까지 돈다. 응답만 먼저 돌려준다
             timed_out.set()
-            call_logger.info(json.dumps({"feature": feature, "model_version": model_version,
-                                         "input_kind": input_kind, "result_summary": "error=server_timeout",
-                                         "latency_ms": int(limit * 1000), "error": _code(feature, 504),
-                                         "request_id": rid}, ensure_ascii=False))
+            record({"feature": feature, "model_version": model_version, "input_kind": input_kind,
+                    "result_summary": "error=server_timeout", "latency_ms": int(limit * 1000),
+                    "error": _code(feature, 504)})
             return _error(feature, 504, "server_timeout", "시간 초과", limit_sec=limit)
         headers = {"X-Request-Id": rid}
         if isinstance(result, AiErrorResponse):
@@ -158,7 +168,8 @@ def create_app(settings: Optional[Settings] = None, models: Optional[Models] = N
     @app.get("/health", tags=["운영"])
     async def health(request: Request):
         models: Models = m(request)
-        return {"status": "ok", "models": models.versions(), "unavailable": models.unavailable()}
+        return {"status": "ok", "models": models.versions(), "unavailable": models.unavailable(),
+                "inference_log": request.app.state.log_writer.status()}
 
     auth = [Depends(require_token)]
 

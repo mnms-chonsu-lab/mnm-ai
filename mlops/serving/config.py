@@ -35,9 +35,11 @@ class Settings:
     # 시작할 때 불러올 모델. 0이면 건너뛴다 (메모리 확인·로컬 개발용)
     load_part_check: bool = True
     load_behavior: bool = True
-    # 방역 안내 지식베이스 (JSON 배열 또는 JSONL). 비우면 조항 없음 → RAG-NONE
+    # 방역 안내 지식베이스 (JSON 배열 또는 JSONL). 비우면 guide 는 503 not_loaded
     guide_kb_path: str = ""
     guide_embed_cache: str = ""
+    # AI 호출 기록 DB (`inference_log` INSERT 전용 계정). 비우면 기록하지 않음 (로그 줄만 남김)
+    log_db_url: str = ""
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -52,6 +54,7 @@ class Settings:
             load_behavior=os.getenv("AI_LOAD_BEHAVIOR", "1") not in ("0", "false", "off"),
             guide_kb_path=os.getenv("GUIDE_KB_PATH", ""),
             guide_embed_cache=os.getenv("GUIDE_EMBED_CACHE", ""),
+            log_db_url=os.getenv("AI_LOG_DB_URL", ""),
         )
 
     def timeout_for(self, feature: str) -> float:
