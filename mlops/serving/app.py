@@ -127,7 +127,7 @@ def create_app(settings: Optional[Settings] = None, models: Optional[Models] = N
         def record(log: dict, status: int) -> None:
             # 로그 줄(request_id·상태 포함)은 항상 남기고, DB 기록은 켜져 있을 때만 (응답을 기다리게 하지 않음)
             call_logger.info(json.dumps({**log, "status": status, "request_id": rid}, ensure_ascii=False))
-            request.app.state.log_writer.put(log)
+            request.app.state.log_writer.put({**log, "http_status": status})
             # 알람용 실패 = AI 장애만 (503·504). 404 근거 없음·422 입력 문제는 호출 수에만 넣는다 (mnm-ai#14 @kkamret)
             request.app.state.calls.add(failed=status in FAILURE_STATUSES)
 

@@ -61,7 +61,7 @@ curl localhost:8000/health
 
 ## AI 호출 기록 (`inference_log`)
 
-어드민 A-S07(AI 호출 로그)과 계산식 ⑪(AI 오류율 = 실패 호출 수 ÷ 전체 호출 수)의 원천입니다. 테이블은 mnm-data `migrations/0001_init_operational.sql`.
+어드민 A-S07(AI 호출 로그)과 계산식 ⑪(AI 오류율 = 실패 호출 수 ÷ 전체 호출 수)의 원천입니다. 테이블은 mnm-data `migrations/0001_init_operational.sql` + `0004_inference_log_http_status.sql`.
 
 | 컬럼 | 값 |
 | --- | --- |
@@ -71,6 +71,7 @@ curl localhost:8000/health
 | `result_summary` | 코드·개수만 (예: `match=True fallback=False`, 서버 시간 초과는 `error=server_timeout`) |
 | `latency_ms` | 처리 시간 (서버 시간 초과는 제한값) |
 | `error` | 실패하면 오류 코드 (`PART-FAIL` 등), 성공하면 비움 |
+| `http_status` | AI 서버 응답 상태 (200·404·422·503·504). 24시간 오류율 = `http_status IN (503, 504)` ÷ 전체 (mnm-data `0004`) |
 | `at` | 호출 시각 (UTC) |
 
 - 호출 1건 = 기록 1건. 서버 시간 제한(504)을 먼저 돌려준 호출은 뒤늦게 끝나도 다시 기록하지 않습니다.

@@ -3,7 +3,9 @@
 - 요청을 붙잡지 않는다: 응답 경로에서는 큐에 넣기만 하고, 쓰기는 백그라운드 스레드 1개가 한다.
 - DB 가 죽어도 AI 응답은 그대로 나간다. 못 쓴 기록은 버리고 개수만 센다 (`/health` 에 표시).
 - 원문(발화·사진·영상·주소)은 넣지 않는다. `AiCallLog` 의 요약·오류 코드만 쓴다.
-- 테이블 정의는 mnm-data `migrations/0001_init_operational.sql` 기준. 컬럼 길이에 맞춰 자른다.
+- 테이블 정의는 mnm-data `migrations/0001_init_operational.sql` + `0004_inference_log_http_status.sql`(`http_status`) 기준.
+  컬럼 길이에 맞춰 자른다.
+- `http_status`: AI 서버 응답 상태. 24시간 오류율(계산식 ⑪)은 `http_status IN (503, 504)`만 실패로 센다 (mnm-ai#14).
 """
 
 from __future__ import annotations
@@ -18,8 +20,9 @@ from typing import Any, Callable, Optional
 logger = logging.getLogger("mnm_ai.inference_log")
 
 INSERT_SQL = (
-    "INSERT INTO inference_log (feature, model_version, input_kind, result_summary, latency_ms, error, at) "
-    "VALUES (%(feature)s, %(model_version)s, %(input_kind)s, %(result_summary)s, %(latency_ms)s, %(error)s, %(at)s)"
+    "INSERT INTO inference_log (feature, model_version, input_kind, result_summary, latency_ms, error, http_status, at) "
+    "VALUES (%(feature)s, %(model_version)s, %(input_kind)s, %(result_summary)s, %(latency_ms)s, %(error)s, "
+    "%(http_status)s, %(at)s)"
 )
 # 컬럼 길이 (mnm-data migrations): feature 50 · model_version 50 · input_kind 30 · result_summary 500
 LIMITS = {"feature": 50, "model_version": 50, "input_kind": 30, "result_summary": 500}
@@ -37,6 +40,7 @@ def to_row(log: dict[str, Any], at: Optional[datetime] = None) -> dict[str, Any]
         "result_summary": log.get("result_summary"),
         "latency_ms": log.get("latency_ms"),
         "error": log.get("error"),
+        "http_status": log.get("http_status"),
         "at": at or datetime.now(timezone.utc),
     }
     for key, n in LIMITS.items():
