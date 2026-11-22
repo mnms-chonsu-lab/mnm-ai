@@ -14,6 +14,7 @@ AI 기능 6개를 내부 API로 여는 FastAPI 서버입니다. `services/api`(S
 | `fetch.py` | 사진·영상 주소(Object Storage 서명 URL)에서 파일 받기 |
 | `errors.py` | 기능별 `detail.reason` → HTTP 상태 코드 |
 | `inference_log.py` | AI 호출 기록 → DB `inference_log` (백그라운드 쓰기) |
+| `call_window.py` | 최근 5분 호출 수·실패 수 (`/health` `calls_5m`, 알람용) |
 | `config.py` | 환경변수 |
 
 기능 로직은 새로 만들지 않고 `agents/`·`inference/`의 진입 함수를 `common.call_ai`로 감싸 부릅니다.
@@ -26,7 +27,7 @@ AI 기능 6개를 내부 API로 여는 FastAPI 서버입니다. `services/api`(S
 | `POST /ai/behavior` | `behavior_yolo11s.analyze_video` | `video_url` → 임시 파일 |
 | `POST /ai/guide` | `guide_rag.guide` | `GUIDE_KB_PATH` 조항 목록 사용 |
 | `POST /ai/summary` | `receiver_copilot.summarize` | JSON 그대로 |
-| `GET /health` | — | 토큰 없이 열림. 불러온 모델 버전과 못 불러온 이유, `inference_log` 기록 상태 |
+| `GET /health` | — | 토큰 없이 열림. 불러온 모델 버전과 못 불러온 이유, `inference_log` 기록 상태, 최근 5분 호출 수·실패 수(`calls_5m`) |
 
 ## 실행
 
@@ -76,6 +77,14 @@ curl localhost:8000/health
 - 응답을 기다리게 하지 않습니다. 큐에 넣고 백그라운드 스레드가 50건씩 씁니다. 큐가 1,000건을 넘거나 DB 쓰기가 실패하면 그 기록은 버리고 `/health`의 `inference_log.dropped`로 셉니다 (제안값, 실측으로 조정).
 - 원문(발화·사진·영상·주소)과 `request_id`는 DB에 넣지 않습니다. `request_id`는 로그 줄(`mnm_ai.calls`)에만 남습니다.
 - 실패 원인은 클래스 이름만 남깁니다 (오류 문구에 접속 정보가 섞일 수 있어서).
+
+## 최근 5분 오류율 (`calls_5m`, 알람용)
+
+`/health` 응답의 `calls_5m`: `{"window_sec": 300, "calls": 12, "failures": 1, "error_rate": 0.0833}` (호출이 없으면 `error_rate`는 `null`).
+
+- 계산식 ⑪ 기준: 모델 처리까지 간 호출만 셉니다. 요청 형식 오류(422 `bad_request`)·토큰 오류(401)는 빼고, 사진을 못 불러온 경우(`PART-FAIL`)·서버 시간 초과(504)는 실패로 셉니다.
+- 메모리에만 두어서 서버를 재시작하면 0부터 다시 셉니다. 24시간 오류율은 DB `inference_log`로 계산합니다.
+- 알람은 mnm-dev 감시 프로그램(`infra/docker/monitor`)이 이 값을 1분마다 읽어 판단합니다.
 
 ## 상태 코드
 
