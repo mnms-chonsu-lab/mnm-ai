@@ -1,0 +1,62 @@
+name: build-inference
+
+# develop 머지 → 테스트 → AI 서버 이미지 빌드·GHCR 푸시 (ghcr.io/mnms-chonsu-lab/mnm-ai-inference)
+# 스테이징 서버 배포는 mnm-dev infra/docker/compose.deploy.yml 이 이 이미지를 받아서 한다.
+on:
+  push:
+    branches: [develop]
+    paths:
+      - "agents/**"
+      - "inference/**"
+      - "rules/**"
+      - "common/**"
+      - "mlops/serving/**"
+      - ".dockerignore"
+      - ".github/workflows/build-inference.yml"
+  pull_request:
+    paths:
+      - "mlops/serving/**"
+      - ".github/workflows/build-inference.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: build-inference-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  IMAGE: ghcr.io/mnms-chonsu-lab/mnm-ai-inference
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: ffmpeg (STT 테스트)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+      - name: 의존성 (torch 없이)
+        run: pip install -r mlops/serving/requirements-dev.txt
+      - name: 테스트
+        run: python -m pytest -q common agents inference rules mlops/serving
+
+  image:
+    needs: test
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: GHCR 로그인
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+      - name: 빌드·푸시
+        run: |
+          docker build -f mlops/serving/Dockerfile -t "$IMAGE:${{ github.sha }}" -t "$IMAGE:develop" .
+          docker push "$IMAGE:${{ github.sha }}"
+          docker push "$IMAGE:develop"
+      - name: 이미지 크기
+        run: docker image ls "$IMAGE" --format '{{.Tag}} {{.Size}}' >> "$GITHUB_STEP_SUMMARY"
