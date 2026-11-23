@@ -406,7 +406,9 @@ def test_inference_log_writes_one_row_per_call(tmp_path):
     assert [r["feature"] for r in rows] == ["summary", "part_check"]
     assert rows[0]["error"] is None and rows[0]["result_summary"].startswith("missing=")
     assert rows[1]["error"] == bad.json()["code"]
-    assert set(rows[0]) == {"feature", "model_version", "input_kind", "result_summary", "latency_ms", "error", "at"}
+    assert set(rows[0]) == {"feature", "model_version", "input_kind", "result_summary", "latency_ms", "error",
+                            "http_status", "at"}
+    assert [r["http_status"] for r in rows] == [200, bad.status_code]
     assert all("rid-1" not in str(v) and STORAGE not in str(v) for r in rows for v in r.values())  # 주소·request_id 없음
     assert health["enabled"] and health["written"] == 2 and health["dropped"] == 0
 
@@ -451,6 +453,7 @@ def test_inference_log_timeout_writes_once(monkeypatch):
         assert w.flush()
     assert r.status_code == 504
     assert len(rows) == 1 and rows[0]["result_summary"] == "error=server_timeout" and rows[0]["latency_ms"] == 100
+    assert rows[0]["http_status"] == 504
 
 
 def test_inference_log_queue_full_drops_and_counts():
@@ -521,3 +524,20 @@ def test_health_calls_5m_counts_server_timeout_as_failure(monkeypatch):
         time.sleep(0.4)  # 늦게 끝난 작업이 다시 세지 않는지
         stats = c.get("/health").json()["calls_5m"]
     assert r.status_code == 504 and stats["calls"] == 1 and stats["failures"] == 1
+
+
+def test_inference_log_http_status_for_404_and_503(make_client):
+    """24시간 오류율용: 404 근거 없음·503 장애가 http_status 로 구분돼서 남는지 (#14)."""
+    rows: list = []
+    w = writer(rows)
+    models = Models(embedder=FakeEmbedder(), detector=None, kb=KB, http=storage({}),
+                    load_errors={"behavior": "BEHAVIOR_WEIGHTS 없음"})
+    with TestClient(app_mod.create_app(settings=Settings(internal_token=TOKEN, fetch_allowed_hosts=(STORAGE,)),
+                                       models=models, log_writer=w)) as c:
+        none = c.post("/ai/guide", json={"disease": "LSD", "stage": "after_report"}, headers=H)
+        down = c.post("/ai/behavior", json={"video_url": f"https://{STORAGE}/b/cow.mp4"}, headers=H)
+        assert w.flush()
+    assert (none.status_code, down.status_code) == (404, 503)
+    assert [(r["feature"], r["http_status"], r["error"]) for r in rows] == [
+        ("guide", 404, "RAG-NONE"), ("behavior", 503, down.json()["code"])]
+
