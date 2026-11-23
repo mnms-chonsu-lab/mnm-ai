@@ -33,6 +33,10 @@ MLflow 트래킹 서버와 실험·모델 버전 기록입니다.
 ssh -i "$HOME\.ssh\mnm_staging" -N -L 5000:127.0.0.1:5000 inseo@211.233.223.189
 ```
 
+- 서버 접속 창이 아니라 **노트북의 새 창**에서 실행합니다. 아무것도 안 나오고 멈춘 것처럼 보이면 정상이고, 창을 열어 둔 동안만 화면이 열립니다
+- 노트북에서 5000번을 못 쓰면(Windows 예약 등) 앞 번호만 바꿉니다: `-L 15000:127.0.0.1:5000` → `http://localhost:15000`
+- 화면 왼쪽 위 `GenAI | Model training`에서 **Model training**을 골라야 run 목록·모델 버전이 보입니다
+
 ### 기존 결과 기록
 
 서버에서 MLflow 이미지로 한 번 실행합니다. 여러 번 실행해도 같은 기록이 늘지 않습니다 (`mnm.key`로 확인).
@@ -41,13 +45,14 @@ ssh -i "$HOME\.ssh\mnm_staging" -N -L 5000:127.0.0.1:5000 inseo@211.233.223.189
 sudo docker run --rm --network mnm-mlflow_default \
   -v /root/mnm/models/behavior:/models/behavior:ro \
   -v "$PWD/log_existing.py:/app/log_existing.py:ro" \
-  -e MLFLOW_TRACKING_URI=http://mlflow:5000 \
+  -e MLFLOW_TRACKING_URI=http://mlflow:5000 -e GIT_PYTHON_REFRESH=quiet \
   -e BEHAVIOR_WEIGHTS=/models/behavior/best.pt \
   -e SERVING_IMAGE=ghcr.io/mnms-chonsu-lab/mnm-ai-inference:<커밋 SHA> \
   ghcr.io/mlflow/mlflow:v3.18.0 python /app/log_existing.py
 ```
 
 - 가중치 sha256이 `inference/behavior_yolo11s/README.md` 기록(`5485f12b8d9cf044…`)과 다르면 기록하지 않고 멈춥니다
+- `GIT_PYTHON_REFRESH=quiet`: 컨테이너 안에 git이 없어서 나오는 경고를 끕니다. 커밋 정보는 run 태그 `mnm.source`에 남습니다
 
 ## 확장 (MVP 밖)
 
