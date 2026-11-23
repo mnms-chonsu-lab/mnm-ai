@@ -471,3 +471,53 @@ def test_inference_log_row_truncated_to_column_size():
                   "latency_ms": 5, "request_id": "rid"})
     assert len(row["model_version"]) == 50 and len(row["input_kind"]) == 30 and len(row["result_summary"]) == 500
     assert "request_id" not in row and row["at"].tzinfo is not None
+
+
+# ---------------------------------------------------------------------------- calls_5m (알람용)
+from mlops.serving.call_window import CallWindow  # noqa: E402
+
+
+def test_call_window_counts_and_expires():
+    w = CallWindow(seconds=300)
+    assert w.snapshot(now=0) == {"window_sec": 300, "calls": 0, "failures": 0, "error_rate": None}
+    w.add(False, now=0)
+    w.add(True, now=100)
+    w.add(False, now=200)
+    assert w.snapshot(now=250) == {"window_sec": 300, "calls": 3, "failures": 1, "error_rate": 0.3333}
+    assert w.snapshot(now=350)["calls"] == 2  # 0초 호출은 5분이 지나 빠짐
+    assert w.snapshot(now=600) == {"window_sec": 300, "calls": 0, "failures": 0, "error_rate": None}
+
+
+def test_health_calls_5m_counts_model_calls_only(make_client):
+    with make_client() as c:
+        ok = c.post("/ai/summary", json=SUMMARY_REQ, headers=H)
+        rejected = c.post("/ai/part-check", json={"image_url": f"https://{STORAGE}/b/none.png", "requested_part": "mouth"},
+                          headers=H)  # 없는 사진 → 422 fetch_rejected: 호출 수에만
+        bad = c.post("/ai/summary", json={"record_id": "r-1"}, headers=H)  # 형식 오류: 세지 않음
+        noauth = c.post("/ai/summary", json=SUMMARY_REQ)  # 토큰 없음: 세지 않음
+        stats = c.get("/health").json()["calls_5m"]
+    assert (ok.status_code, rejected.status_code, bad.status_code, noauth.status_code) == (200, 422, 422, 401)
+    assert rejected.json()["detail"]["reason"] == "fetch_rejected"
+    assert stats == {"window_sec": 300, "calls": 2, "failures": 0, "error_rate": 0.0}
+
+
+def test_health_calls_5m_failures_are_503_504_only(make_client):
+    """#14 @kkamret: 실패 = AI 장애(503·504)만. 404 근거 없음은 호출 수에만."""
+    with make_client(detector=None, load_errors={"behavior": "BEHAVIOR_WEIGHTS 없음"}) as c:
+        down = c.post("/ai/behavior", json={"video_url": f"https://{STORAGE}/b/cow.mp4"}, headers=H)  # 503 not_loaded
+        none = c.post("/ai/guide", json={"disease": "LSD", "stage": "after_report"}, headers=H)  # 404 RAG-NONE
+        stats = c.get("/health").json()["calls_5m"]
+    assert (down.status_code, none.status_code) == (503, 404)
+    assert stats == {"window_sec": 300, "calls": 2, "failures": 1, "error_rate": 0.5}
+
+
+def test_health_calls_5m_counts_server_timeout_as_failure(monkeypatch):
+    import time
+
+    monkeypatch.setattr(app_mod, "summarize", lambda body: time.sleep(0.3))
+    with TestClient(app_mod.create_app(settings=Settings(internal_token=TOKEN, timeout_sec=0.05),
+                                       models=Models(kb=KB))) as c:
+        r = c.post("/ai/summary", json=SUMMARY_REQ, headers=H)
+        time.sleep(0.4)  # 늦게 끝난 작업이 다시 세지 않는지
+        stats = c.get("/health").json()["calls_5m"]
+    assert r.status_code == 504 and stats["calls"] == 1 and stats["failures"] == 1

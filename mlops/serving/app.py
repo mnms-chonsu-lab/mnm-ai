@@ -50,6 +50,7 @@ from part_check_siglip2.schema import PartCheckRequest  # noqa: E402
 from .config import Settings  # noqa: E402
 from .errors import ServingError, status_for  # noqa: E402
 from .fetch import FetchError, fetch, suffix_of, to_tempfile  # noqa: E402
+from .call_window import FAILURE_STATUSES, CallWindow  # noqa: E402
 from .inference_log import InferenceLogWriter  # noqa: E402
 from .models import Models, load_models  # noqa: E402
 
@@ -86,6 +87,7 @@ def create_app(settings: Optional[Settings] = None, models: Optional[Models] = N
             logger.warning("AI_INTERNAL_TOKEN 이 비어 있어 /ai/* 요청을 모두 거절합니다")
         app.state.models = models if models is not None else await run_in_threadpool(load_models, settings)
         app.state.log_writer = log_writer if log_writer is not None else InferenceLogWriter(settings.log_db_url)
+        app.state.calls = CallWindow()
         if not app.state.log_writer.enabled:
             logger.warning("AI_LOG_DB_URL 이 비어 있어 inference_log 를 DB에 기록하지 않습니다")
         yield
@@ -120,17 +122,19 @@ def create_app(settings: Optional[Settings] = None, models: Optional[Models] = N
         rid = request.headers.get("x-request-id") or uuid.uuid4().hex[:16]
 
         timed_out = threading.Event()
+        done: list[dict] = []  # call_ai 가 남긴 기록 1건 (상태 코드를 안 뒤에 기록한다)
 
-        def record(log: dict) -> None:
-            # 로그 줄(request_id 포함)은 항상 남기고, DB 기록은 켜져 있을 때만 (응답을 기다리게 하지 않음)
-            call_logger.info(json.dumps({**log, "request_id": rid}, ensure_ascii=False))
+        def record(log: dict, status: int) -> None:
+            # 로그 줄(request_id·상태 포함)은 항상 남기고, DB 기록은 켜져 있을 때만 (응답을 기다리게 하지 않음)
+            call_logger.info(json.dumps({**log, "status": status, "request_id": rid}, ensure_ascii=False))
             request.app.state.log_writer.put(log)
+            # 알람용 실패 = AI 장애만 (503·504). 404 근거 없음·422 입력 문제는 호출 수에만 넣는다 (mnm-ai#14 @kkamret)
+            request.app.state.calls.add(failed=status in FAILURE_STATUSES)
 
         def sink(log: AiCallLog) -> None:
             # 서버 시간 제한으로 504를 먼저 돌려준 호출은, 뒤늦게 끝나도 다시 기록하지 않는다 (기록 1건 = 응답 1건)
-            if timed_out.is_set():
-                return
-            record(log.model_dump(mode="json"))
+            if not timed_out.is_set():
+                done.append(log.model_dump(mode="json"))
 
         limit = settings.timeout_for(feature)
         try:
@@ -141,11 +145,13 @@ def create_app(settings: Optional[Settings] = None, models: Optional[Models] = N
             timed_out.set()
             record({"feature": feature, "model_version": model_version, "input_kind": input_kind,
                     "result_summary": "error=server_timeout", "latency_ms": int(limit * 1000),
-                    "error": _code(feature, 504)})
+                    "error": _code(feature, 504)}, 504)
             return _error(feature, 504, "server_timeout", "시간 초과", limit_sec=limit)
         headers = {"X-Request-Id": rid}
+        status = status_for(feature, result.code, result.detail) if isinstance(result, AiErrorResponse) else 200
+        if done:
+            record(done[0], status)
         if isinstance(result, AiErrorResponse):
-            status = status_for(feature, result.code, result.detail)
             return JSONResponse(status_code=status, content=result.model_dump(), headers=headers)
         return JSONResponse(status_code=200, content=result.model_dump(mode="json"), headers=headers)
 
@@ -169,7 +175,8 @@ def create_app(settings: Optional[Settings] = None, models: Optional[Models] = N
     async def health(request: Request):
         models: Models = m(request)
         return {"status": "ok", "models": models.versions(), "unavailable": models.unavailable(),
-                "inference_log": request.app.state.log_writer.status()}
+                "inference_log": request.app.state.log_writer.status(),
+                "calls_5m": request.app.state.calls.snapshot()}
 
     auth = [Depends(require_token)]
 
