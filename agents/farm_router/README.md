@@ -45,7 +45,7 @@
 | 모델 | OpenAI `gpt-5.4-mini` (`ROUTER_MODEL`로 변경) |
 | 형식 강제 | Structured Outputs (`responses.parse` + `text_format`, strict) |
 | 입력 | `{ text, today, farm_context: { cows: [{ tag4, tag, desc, barn }] } }` (이름·전화번호 없음. `tag` 12자리는 선택) |
-| 출력 | `{ intent, items[], report_type, report_fields, missing[] }` |
+| 출력 | `{ intent, items[], report_type, report_fields, reports[], notice, missing[] }` |
 | 타임아웃 | 8초, 재시도 없음 |
 | 저장 | `store=False` (OpenAI 쪽에 응답 저장 안 함) |
 
@@ -64,7 +64,8 @@
    | 그 밖 | 없음, 12자리가 목록과 다름 | `null` + `missing` `"cow"` |
 
    - 신고 항목 `mother_tag4`·`cow_tag`에는 말한 번호를 그대로 넣습니다(4자리 또는 12자리). 끝 4자리 = 12자리의 마지막 4자리 (명세 변경 이력 11/20).
-3. `report_type`이 있으면 `intent`는 항상 `history_report`입니다. 신고 항목의 개체번호가 같은 종류(출생·폐사·이동) 일지 항목에 빠져 있으면 채웁니다.
+3. 신고서는 소 한 마리에 1장씩 `reports[]`에 담습니다. `report_type`·`report_fields`는 `reports[0]`과 같습니다(기존 클라이언트 호환). 가축시장(우시장)에서 사고판 거래는 시장이 신고하므로 양도·양수 신고서를 빼고 `notice: "market_trade"`만 보냅니다. 안내 문구는 받는 쪽이 공식 자료로 붙입니다.
+   신고서가 1장 이상이면 `intent`는 항상 `history_report`입니다. 신고 항목의 개체번호가 같은 종류(출생·폐사·이동) 일지 항목에 빠져 있으면 채웁니다(신고서가 1장일 때만).
 4. 말하지 않은 값은 `null`입니다. 신고서 빈칸 확인과 되묻기는 `rules/report_state_machine`이 합니다.
 
 | report_type | report_fields |

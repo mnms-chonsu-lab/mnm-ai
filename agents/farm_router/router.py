@@ -29,7 +29,7 @@ from .schema import (
 ROUTER_MODEL = os.getenv("ROUTER_MODEL", "gpt-5.4-mini")
 ROUTER_REASONING_EFFORT = os.getenv("ROUTER_REASONING_EFFORT") or None
 TIMEOUT_SEC = 8.0  # 명세 REQ-AI-01·12: 8초 초과 시 LLM-FAIL
-PROMPT_VERSION = "route-v2"
+PROMPT_VERSION = "route-v3"
 MODEL_VERSION = f"{ROUTER_MODEL}+{PROMPT_VERSION}"
 
 
@@ -77,13 +77,18 @@ class _Move(_O):
     counterpart_name: Optional[str]
 
 
-class LlmRoute(_O):
-    intent: Intent
-    items: list[_Item]
-    report_type: Optional[ReportType]
+class _Report(_O):
+    report_type: ReportType
     birth: Optional[_Birth] = Field(description="report_type 이 birth 일 때만 채움")
     death: Optional[_Death] = Field(description="report_type 이 death 일 때만 채움")
     move: Optional[_Move] = Field(description="report_type 이 move 일 때만 채움")
+
+
+class LlmRoute(_O):
+    intent: Intent
+    items: list[_Item]
+    reports: list[_Report] = Field(description="신고서. 소 한 마리에 1장. 신고가 아니면 빈 목록")
+    market_trade: bool = Field(description="가축시장(우시장)에서 사고판 거래이면 true")
 
 
 INSTRUCTIONS = """너는 한우 농가의 말 한 문장을 축산 기록으로 정리한다.
@@ -105,12 +110,17 @@ INSTRUCTIONS = """너는 한우 농가의 말 한 문장을 축산 기록으로 
 - 신고서의 mother_tag4, cow_tag 도 말한 번호를 그대로 적는다 (4자리 또는 12자리)
 - 접종이면 vaccine_type 에 백신 종류. 두수를 말했으면 head_count
 
-[report_type]
-- 출생 → birth: mother_tag4, birth_date, sex(암 또는 수)
-- 폐사 → death: cow_tag, death_date
-- 이동 → move: move_type(sell=판매, buy=구입, move=옮김), cow_tag, move_date, counterpart_farm_no, counterpart_name
-- 신고가 아니면 report_type, birth, death, move 모두 null
+[reports] 신고서 목록
+- 소 한 마리에 신고서 1장. 소가 여러 마리면 소마다 따로 만든다 (예: "3001번이랑 0000번이 죽었어" → 폐사 신고서 2장)
+- 출생 → report_type birth, birth: mother_tag4, birth_date, sex(암 또는 수)
+- 폐사 → report_type death, death: cow_tag, death_date
+- 이동 → report_type move, move: move_type(sell=판매, buy=구입, move=옮김), cow_tag, move_date, counterpart_farm_no, counterpart_name
 - report_type 에 해당하지 않는 객체는 null
+- 신고가 아니면 빈 목록
+
+[market_trade]
+- 가축시장(우시장)에서 소를 팔거나 산 경우 true. 그 밖에는 false
+- 이때도 이동 항목과 신고서는 평소처럼 채운다 (가축시장 거래 신고서는 코드가 뺀다)
 
 [날짜]
 - "어젯밤", "오늘 오후", "그저께" 같은 표현은 오늘 날짜 기준 YYYY-MM-DD 로 바꾼다
@@ -188,11 +198,21 @@ def postprocess(out: LlmRoute, req: RouteRequest) -> RouteResponse:
         d["cow_tag4"], d["cow_tag"] = t4, t12
         items.append(d)
 
-    fields: dict = {}
-    if out.report_type is not None:
-        src = getattr(out, out.report_type)
+    # 가축시장에서 사고판 거래는 시장(축협)이 신고하므로 양도·양수 신고서를 만들지 않는다 (mnm-ai#20)
+    notice = None
+    src_reports = list(out.reports)
+    if out.market_trade:
+        kept = [r for r in src_reports if not (r.report_type == "move" and r.move and r.move.move_type in ("sell", "buy"))]
+        if len(kept) != len(src_reports):
+            notice = "market_trade"
+        src_reports = kept
+
+    reports: list[dict] = []
+    subjects: list[tuple] = []
+    for r in src_reports:
+        src = getattr(r, r.report_type)
         if src is None:
-            raise RouteError("report_type 과 항목이 맞지 않음", {"report_type": out.report_type})
+            raise RouteError("report_type 과 항목이 맞지 않음", {"report_type": r.report_type})
         fields = src.model_dump()
         for k in ("birth_date", "death_date", "move_date"):
             if k in fields:
@@ -202,22 +222,36 @@ def postprocess(out: LlmRoute, req: RouteRequest) -> RouteResponse:
             if k in fields:
                 subject = check(fields[k])
                 fields[k] = subject[2]  # 말한 번호 그대로 (4자리 또는 12자리)
-        # 신고서 칸에만 번호가 있고 같은 종류의 일지 항목에는 빠진 경우 채운다
-        cat = {"birth": "출생", "death": "폐사", "move": "이동"}[out.report_type]
+        reports.append({"report_type": r.report_type, "report_fields": fields})
+        subjects.append((r.report_type, subject))
+
+    # 신고서 칸에만 번호가 있고 같은 종류의 일지 항목에는 빠진 경우 채운다 (신고서 1장일 때만: 여러 장이면 어느 항목인지 정할 수 없음)
+    if len(subjects) == 1:
+        rt, subject = subjects[0]
+        cat = {"birth": "출생", "death": "폐사", "move": "이동"}[rt]
         if subject[0]:
             for d in items:
                 if d["category"] == cat and d["cow_tag4"] is None:
                     d["cow_tag4"], d["cow_tag"] = subject[0], subject[1]
 
-    # 신고서 항목을 만들었으면 신고 흐름으로 보낸다 (모델이 intent 를 diary 로 둔 경우, 실측 3/50)
-    intent = "history_report" if out.report_type is not None else out.intent
+    # 신고서를 만들었으면 신고 흐름으로 보낸다 (모델이 intent 를 diary 로 둔 경우, 실측 3/50).
+    # 가축시장 거래로 신고서가 모두 빠졌으면 일지로 남긴다.
+    if reports:
+        intent = "history_report"
+    elif notice and out.intent == "history_report":
+        intent = "diary"
+    else:
+        intent = out.intent
+    first = reports[0] if reports else {"report_type": None, "report_fields": {}}
 
     try:
         return RouteResponse(
             intent=intent,
             items=items,
-            report_type=out.report_type,
-            report_fields=fields,
+            report_type=first["report_type"],
+            report_fields=first["report_fields"],
+            reports=reports,
+            notice=notice,
             missing=missing,
         )
     except ValidationError as e:
