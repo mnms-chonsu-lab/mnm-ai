@@ -31,9 +31,20 @@ class FakeClient:
 
 
 def llm(**kw):
-    base = dict(intent="diary", items=[], report_type=None, birth=None, death=None, move=None)
+    """report_type·birth·death·move 를 주면 신고서 1장으로 바꾼다 (기존 테스트 호환)."""
+    rt = kw.pop("report_type", None)
+    one = {k: kw.pop(k, None) for k in ("birth", "death", "move")}
+    base = dict(intent="diary", items=[], reports=[], market_trade=False)
+    if rt is not None:
+        base["reports"] = [dict(report_type=rt, **one)]
     base.update(kw)
     return LlmRoute.model_validate(base)
+
+
+def rep(rt, **kw):
+    base = dict(report_type=rt, birth=None, death=None, move=None)
+    base.update(kw)
+    return base
 
 
 def item(**kw):
@@ -236,3 +247,81 @@ def test_cow_tag_must_end_with_tag4():
     with pytest.raises(ValueError):
         RouteRequest(text="x", today=date(2026, 11, 15),
                      farm_context={"cows": [{"tag4": "1234", "tag": "900000005678"}]})
+
+
+# --- mnm-ai#20: 여러 마리 신고, 가축시장 거래 -------------------------------
+REQ20 = RouteRequest(
+    text="x",
+    today=date(2026, 11, 24),
+    farm_context={"cows": [{"tag4": "3001"}, {"tag4": "0000"}]},
+)
+
+
+def test_two_deaths_make_two_reports():
+    out = route(REQ20, FakeClient(llm(
+        intent="history_report",
+        items=[item(category="폐사", value="3001번 폐사", cow_tag4="3001"), item(category="폐사", value="0000번 폐사", cow_tag4="0000")],
+        reports=[
+            rep("death", death={"cow_tag": "3001", "death_date": "2026-11-24"}),
+            rep("death", death={"cow_tag": "0000", "death_date": "2026-11-24"}),
+        ],
+    )))
+    assert [r.report_fields.cow_tag for r in out.reports] == ["3001", "0000"]
+    # 기존 필드는 첫 번째 신고서와 같다 (mnm-dev 호환)
+    assert out.report_type == "death" and out.report_fields.cow_tag == "3001"
+    assert [i.cow_tag4 for i in out.items] == ["3001", "0000"] and out.missing == []
+
+
+def test_single_report_also_in_reports():
+    out = route(REQ20, FakeClient(llm(
+        intent="history_report",
+        items=[item(category="폐사", value="폐사", cow_tag4=None)],
+        report_type="death", death={"cow_tag": "3001", "death_date": "2026-11-24"},
+    )))
+    assert len(out.reports) == 1 and out.reports[0].report_fields.cow_tag == "3001"
+    assert out.items[0].cow_tag4 == "3001"  # 신고서 1장이면 일지 항목 번호를 채운다
+
+
+def test_market_sell_makes_no_report_and_notice():
+    out = route(REQ20, FakeClient(llm(
+        intent="history_report",
+        items=[item(category="이동", value="가축시장에서 3001번 판매", cow_tag4="3001")],
+        reports=[rep("move", move={"move_type": "sell", "cow_tag": "3001", "move_date": "2026-11-24",
+                                   "counterpart_farm_no": None, "counterpart_name": None})],
+        market_trade=True,
+    )))
+    assert out.reports == [] and out.report_type is None and out.report_fields == {}
+    assert out.notice == "market_trade" and out.intent == "diary"
+    assert out.items[0].category == "이동" and out.items[0].cow_tag4 == "3001"
+
+
+def test_market_flag_keeps_non_trade_reports():
+    """가축시장 거래와 폐사를 함께 말하면 폐사 신고서는 남는다."""
+    out = route(REQ20, FakeClient(llm(
+        intent="history_report",
+        items=[],
+        reports=[
+            rep("move", move={"move_type": "sell", "cow_tag": "3001", "move_date": "2026-11-24",
+                              "counterpart_farm_no": None, "counterpart_name": None}),
+            rep("death", death={"cow_tag": "0000", "death_date": "2026-11-24"}),
+        ],
+        market_trade=True,
+    )))
+    assert [r.report_type for r in out.reports] == ["death"] and out.report_type == "death"
+    assert out.notice == "market_trade" and out.intent == "history_report"
+
+
+def test_farm_to_farm_sell_still_reports():
+    out = route(REQ20, FakeClient(llm(
+        intent="history_report",
+        items=[item(category="이동", value="3001번 판매", cow_tag4="3001")],
+        report_type="move", move={"move_type": "sell", "cow_tag": "3001", "move_date": "2026-11-24",
+                                  "counterpart_farm_no": None, "counterpart_name": None},
+    )))
+    assert out.report_type == "move" and out.notice is None and len(out.reports) == 1
+
+
+def test_response_rejects_mismatched_first_report():
+    with pytest.raises(Exception):
+        RouteResponse(intent="history_report", items=[], report_type="birth", report_fields={},
+                      reports=[{"report_type": "death", "report_fields": {}}])

@@ -114,28 +114,56 @@ class MoveFields(_Strict):
 REPORT_FIELDS: dict[str, type[_Strict]] = {"birth": BirthFields, "death": DeathFields, "move": MoveFields}
 
 
+def _fields_by_type(data):
+    if not isinstance(data, dict):
+        return data
+    rt = data.get("report_type")
+    rf = data.get("report_fields") or {}
+    if rt is None:
+        if rf:
+            raise ValueError("report_type 이 없으면 report_fields 는 비어 있어야 합니다")
+        return {**data, "report_fields": {}}
+    model = REPORT_FIELDS[rt]
+    return {**data, "report_fields": rf if isinstance(rf, model) else model.model_validate(rf)}
+
+
+class RouteReport(_Strict):
+    report_type: ReportType
+    report_fields: Union[BirthFields, DeathFields, MoveFields] = Field(description="report_type 에 맞는 항목")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _by_type(cls, data):
+        return _fields_by_type(data)
+
+
 class RouteResponse(_Strict):
     intent: Intent
     items: list[RouteItem]
-    report_type: Optional[ReportType] = None
+    report_type: Optional[ReportType] = Field(default=None, description="첫 번째 신고서 종류 (reports[0]). 신고가 아니면 null")
     report_fields: Union[BirthFields, DeathFields, MoveFields, dict] = Field(
-        default_factory=dict, description="report_type 에 맞는 항목. 신고가 아니면 {}"
+        default_factory=dict, description="첫 번째 신고서 항목 (reports[0]). 신고가 아니면 {}"
+    )
+    reports: list[RouteReport] = Field(
+        default_factory=list, description="신고서 목록. 소 한 마리에 1장 (예: 2마리 폐사 → 2장). 신고가 아니면 빈 목록"
+    )
+    notice: Optional[Literal["market_trade"]] = Field(
+        default=None, description='안내 코드. "market_trade": 가축시장 거래라 신고서를 만들지 않음 (시장이 신고). 문구는 받는 쪽이 공식 자료로 붙임'
     )
     missing: list[str] = Field(default_factory=list, description='말한 개체번호가 소 목록에 없거나, 끝 4자리만 말했는데 같은 소가 2마리 이상이면 "cow"')
 
     @model_validator(mode="before")
     @classmethod
-    def _fields_by_type(cls, data):
-        if not isinstance(data, dict):
-            return data
-        rt = data.get("report_type")
-        rf = data.get("report_fields") or {}
-        if rt is None:
-            if rf:
-                raise ValueError("report_type 이 없으면 report_fields 는 비어 있어야 합니다")
-            return {**data, "report_fields": {}}
-        model = REPORT_FIELDS[rt]
-        return {**data, "report_fields": rf if isinstance(rf, model) else model.model_validate(rf)}
+    def _check(cls, data):
+        data = _fields_by_type(data)
+        if isinstance(data, dict) and data.get("reports"):
+            r0 = data["reports"][0]
+            r0_type = r0.report_type if isinstance(r0, RouteReport) else r0.get("report_type")
+            if data.get("report_type") != r0_type:
+                raise ValueError("report_type 은 reports[0] 과 같아야 합니다")
+        elif isinstance(data, dict) and data.get("report_type") is not None:
+            data = {**data, "reports": [{"report_type": data["report_type"], "report_fields": data["report_fields"]}]}
+        return data
 
 
 # ---------------------------------------------------------------------------
