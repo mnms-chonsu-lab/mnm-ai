@@ -60,7 +60,7 @@ cp .env.example .env      # OPENAI_API_KEY 등 채우기
 | 추론 모듈 테스트 | `inference/*` 테스트 (`pytest`, 가중치 없이) | ✅ 2종 35개 통과 |
 | 추론 서비스 | `inference/*` 서버·Dockerfile | 🚧 구현 예정 |
 | 학습·평가 | `mlops/train`, `mlops/eval` | 🚧 구현 예정 |
-| MLflow | `mlops/mlflow` 설정 후 `MLFLOW_TRACKING_URI` 지정 | 🚧 구현 예정 |
+| MLflow | 스테이징 서버 `mnm-mlflow` (`mlops/mlflow/README.md`). 기존 실험 기록·모델 버전 등록 `log_existing.py` | ✅ 기존 실험 기록 · 🚧 학습 스크립트 자동 기록 |
 | 이미지 빌드·GHCR push | `main` 머지 시 GitHub Actions | 🚧 구현 예정 (워크플로는 @dooooing이 추가) |
 
 > 모델 가중치·원본 데이터는 git에 넣지 않습니다. S3 / MLflow에서 가져와 사용합니다.

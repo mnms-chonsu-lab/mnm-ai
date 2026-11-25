@@ -1,0 +1,26 @@
+# MLflow 트래킹 서버 (스테이징). 서버에서는 /root/mnm-mlflow/compose.yml 로 둔다.
+# - 외부로 열지 않는다: 서버 안 127.0.0.1:5000 에만 묶고, 화면은 SSH 터널로 본다 (README)
+# - 기록(DB)·파일(가중치·설정)은 볼륨 mlflow-data 하나에 둔다
+# - API·AI 서버와 네트워크를 나눈다. 서비스 요청 흐름과 관계없다
+services:
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v3.18.0
+    container_name: mnm-mlflow
+    command: >
+      mlflow server --host 0.0.0.0 --port 5000
+      --backend-store-uri sqlite:////mlflow/mlflow.db
+      --artifacts-destination /mlflow/artifacts --serve-artifacts
+      --workers 1
+      --allowed-hosts "localhost:*,127.0.0.1:*,mlflow:*"
+    environment:
+      # 작업 실행기(LLM 평가 등)를 끈다. 켜면 보조 프로세스가 10개쯤 더 뜬다 (작업 공간 측정)
+      MLFLOW_SERVER_ENABLE_JOB_EXECUTION: "false"
+    ports:
+      - "127.0.0.1:5000:5000"
+    volumes:
+      - mlflow-data:/mlflow
+    mem_limit: 768m   # 작업 공간 측정 약 470MB (PSS, 2개 프로세스). 제안값, 실측으로 조정
+    restart: unless-stopped
+
+volumes:
+  mlflow-data:
