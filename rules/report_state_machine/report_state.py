@@ -24,8 +24,9 @@ from .schema import Form6, ReportStateResponse
 
 
 def _tag4(v: Any) -> Optional[str]:
+    """소 칸: 끝 4자리 또는 귀표 12자리 (라우터가 말한 번호를 그대로 넘김, mnm-ai#6)."""
     s = str(v).strip() if v is not None else ""
-    return s if len(s) == 4 and s.isdigit() else None
+    return s if len(s) in (4, 12) and s.isdigit() else None
 
 
 def _date(today: date) -> Callable[[Any], Optional[date]]:

@@ -44,7 +44,7 @@
 | --- | --- |
 | 모델 | OpenAI `gpt-5.4-mini` (`ROUTER_MODEL`로 변경) |
 | 형식 강제 | Structured Outputs (`responses.parse` + `text_format`, strict) |
-| 입력 | `{ text, today, farm_context: { cows: [{ tag4, desc, barn }] } }` (이름·전화번호 없음) |
+| 입력 | `{ text, today, farm_context: { cows: [{ tag4, tag, desc, barn }] } }` (이름·전화번호 없음. `tag` 12자리는 선택) |
 | 출력 | `{ intent, items[], report_type, report_fields, missing[] }` |
 | 타임아웃 | 8초, 재시도 없음 |
 | 저장 | `store=False` (OpenAI 쪽에 응답 저장 안 함) |
@@ -53,7 +53,17 @@
 
 0. 발화의 개체번호 표기를 정리합니다 (`tag_normalize.py`). '번' 앞의 `5, 6, 7, 8` · `1,234` · `일 이 삼 사` · `천이백삼십사`를 `1234` 형식으로 바꿉니다. 그 밖의 말은 바꾸지 않습니다.
 1. 모델이 `intent`, `items`, `report_type`, 신고 종류별 항목을 채웁니다. 상대 날짜("어젯밤", "그저께")는 `today` 기준 `YYYY-MM-DD`로 바꿉니다.
-2. 코드가 개체번호를 소 목록과 대조합니다. 끝 4자리가 목록에 없으면 `null`로 바꾸고 `missing`에 `"cow"`를 넣습니다. 항목의 `cow_tag4`와 신고 항목의 `mother_tag4`·`cow_tag`에 같은 규칙을 씁니다.
+2. 코드가 개체번호를 소 목록과 대조합니다. 정할 수 없으면 `null`로 바꾸고 `missing`에 `"cow"`를 넣습니다. 항목의 `cow_tag4`와 신고 항목의 `mother_tag4`·`cow_tag`에 같은 규칙을 씁니다.
+
+   | 말한 번호 | 끝 4자리가 같은 소 | 결과 |
+   | --- | --- | --- |
+   | 4자리 | 1마리 | 그 소. 목록에 `tag`가 있으면 항목 `cow_tag`에 12자리 |
+   | 4자리 | 2마리 이상 | `null` + `missing` `"cow"` |
+   | 12자리 | 목록 `tag`와 같은 소 | 그 소 |
+   | 12자리 | `tag`를 모르는 소 1마리 | 끝 4자리로 그 소 |
+   | 그 밖 | 없음, 12자리가 목록과 다름 | `null` + `missing` `"cow"` |
+
+   - 신고 항목 `mother_tag4`·`cow_tag`에는 말한 번호를 그대로 넣습니다(4자리 또는 12자리). 끝 4자리 = 12자리의 마지막 4자리 (명세 변경 이력 11/20).
 3. `report_type`이 있으면 `intent`는 항상 `history_report`입니다. 신고 항목의 개체번호가 같은 종류(출생·폐사·이동) 일지 항목에 빠져 있으면 채웁니다.
 4. 말하지 않은 값은 `null`입니다. 신고서 빈칸 확인과 되묻기는 `rules/report_state_machine`이 합니다.
 

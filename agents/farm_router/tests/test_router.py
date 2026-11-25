@@ -156,3 +156,83 @@ def test_report_type_forces_history_report_intent():
             report_type="birth", birth={"mother_tag4": "5678", "birth_date": "2026-11-15", "sex": "수"})
     out = route(REQ, FakeClient(p))
     assert out.intent == "history_report" and out.report_type == "birth"
+
+
+# ---------------------------------------------------------------------------
+# 귀표 끝 4자리가 겹치는 소 (명세 변경 이력 11/20, mnm-ai#6). 번호는 가상
+# ---------------------------------------------------------------------------
+DUP = RouteRequest(
+    text="x",
+    today=date(2026, 11, 15),
+    farm_context={"cows": [
+        {"tag4": "0871", "tag": "900000000871", "barn": "1번 축사"},
+        {"tag4": "0871", "tag": "900000010871", "barn": "2번 축사"},
+        {"tag4": "5678", "tag": "900000005678"},
+        {"tag4": "4321"},  # 12자리를 모르는 소
+    ]},
+)
+
+
+def test_dup_tag4_only_is_null_and_missing():
+    out = route(DUP, FakeClient(llm(items=[item(category="관찰", value="밥 안 먹음", cow_tag4="0871")])))
+    assert out.items[0].cow_tag4 is None and out.items[0].cow_tag is None
+    assert out.missing == ["cow"]
+
+
+def test_dup_full_tag_picks_that_cow():
+    out = route(DUP, FakeClient(llm(items=[item(category="관찰", value="밥 안 먹음", cow_tag4="9000 0001 0871")])))
+    assert out.items[0].cow_tag4 == "0871" and out.items[0].cow_tag == "900000010871"
+    assert out.missing == []
+
+
+def test_full_tag_not_in_list_is_missing():
+    out = route(DUP, FakeClient(llm(items=[item(cow_tag4="900000020871")])))
+    assert out.items[0].cow_tag4 is None and out.missing == ["cow"]
+
+
+def test_single_cow_tag4_fills_full_tag():
+    out = route(DUP, FakeClient(llm(items=[item(cow_tag4="5678")])))
+    assert out.items[0].cow_tag4 == "5678" and out.items[0].cow_tag == "900000005678"
+
+
+def test_cow_without_full_tag_matches_by_last4():
+    out = route(DUP, FakeClient(llm(items=[item(cow_tag4="4321")])))
+    assert out.items[0].cow_tag4 == "4321" and out.items[0].cow_tag is None
+    out = route(DUP, FakeClient(llm(items=[item(cow_tag4="002100004321")])))
+    assert out.items[0].cow_tag4 == "4321" and out.items[0].cow_tag is None
+
+
+def test_birth_mother_said_number_kept():
+    p = llm(intent="history_report", report_type="birth", items=[item(category="출생", value="송아지 출생")],
+            birth={"mother_tag4": "9000 0000 0871", "birth_date": "2026-11-14", "sex": "암"})
+    out = route(DUP, FakeClient(p))
+    assert out.report_fields.mother_tag4 == "900000000871"
+    assert out.items[0].cow_tag4 == "0871" and out.items[0].cow_tag == "900000000871"
+    p = llm(intent="history_report", report_type="birth", items=[], birth={"mother_tag4": "5678", "birth_date": None, "sex": None})
+    assert route(DUP, FakeClient(p)).report_fields.mother_tag4 == "5678"
+
+
+def test_birth_mother_dup_tag4_is_null_and_missing():
+    p = llm(intent="history_report", report_type="birth", items=[item(category="출생", value="송아지 출생")],
+            birth={"mother_tag4": "0871", "birth_date": "2026-11-14", "sex": "암"})
+    out = route(DUP, FakeClient(p))
+    assert out.report_fields.mother_tag4 is None and out.missing == ["cow"]
+    assert out.items[0].cow_tag4 is None
+
+
+def test_death_cow_full_tag_kept():
+    d = llm(intent="history_report", report_type="death", items=[],
+            death={"cow_tag": "900000010871", "death_date": "2026-11-14"})
+    assert route(DUP, FakeClient(d)).report_fields.cow_tag == "900000010871"
+
+
+def test_prompt_lists_full_tag():
+    c = FakeClient(llm())
+    route(DUP, c)
+    assert "tag4=0871, tag=900000010871, barn=2번 축사" in c.kwargs["input"]
+
+
+def test_cow_tag_must_end_with_tag4():
+    with pytest.raises(ValueError):
+        RouteRequest(text="x", today=date(2026, 11, 15),
+                     farm_context={"cows": [{"tag4": "1234", "tag": "900000005678"}]})

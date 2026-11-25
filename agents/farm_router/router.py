@@ -53,7 +53,7 @@ class _O(BaseModel):
 class _Item(_O):
     category: Category
     value: str = Field(description="기록 내용 한 줄")
-    cow_tag4: Optional[str] = Field(description="발화에 나온 개체번호 끝 4자리. 없으면 null")
+    cow_tag4: Optional[str] = Field(description="발화에 나온 개체번호를 말한 그대로 (끝 4자리 또는 귀표 12자리). 없으면 null")
     vaccine_type: Optional[str] = Field(description="접종일 때 백신 종류. 아니면 null")
     head_count: Optional[int] = Field(description="두수. 말하지 않았으면 null")
 
@@ -101,7 +101,8 @@ INSTRUCTIONS = """너는 한우 농가의 말 한 문장을 축산 기록으로 
 - 앞으로의 예정이나 물품이 들어왔다는 말만 있으면 메모
 - 한 문장에 소가 여러 마리 나오면 소마다 항목을 따로 만든다 (예: "1234번이랑 5678번 구제역 백신" → 접종 항목 2개)
 - value 는 말한 내용을 짧게. 말하지 않은 내용을 지어내지 않는다
-- cow_tag4 는 발화에 나온 개체번호 끝 4자리. 소 특징(예: 큰 암소)으로 말하면 소 목록의 desc 와 맞는 소의 tag4. 특정할 수 없으면 null
+- cow_tag4 는 발화에 나온 개체번호를 말한 그대로 적는다. 끝 4자리만 말했으면 4자리, 귀표 12자리를 다 말했으면 12자리. 소 특징(예: 큰 암소)으로 말하면 소 목록의 desc 와 맞는 소의 tag4. 특정할 수 없으면 null
+- 신고서의 mother_tag4, cow_tag 도 말한 번호를 그대로 적는다 (4자리 또는 12자리)
 - 접종이면 vaccine_type 에 백신 종류. 두수를 말했으면 head_count
 
 [report_type]
@@ -122,17 +123,11 @@ INSTRUCTIONS = """너는 한우 농가의 말 한 문장을 축산 기록으로 
 
 def _user_message(req: RouteRequest) -> str:
     cows = "\n".join(
-        f"- tag4={c.tag4}" + (f", desc={c.desc}" if c.desc else "") + (f", barn={c.barn}" if c.barn else "")
+        f"- tag4={c.tag4}" + (f", tag={c.tag}" if c.tag else "") + (f", desc={c.desc}" if c.desc else "")
+        + (f", barn={c.barn}" if c.barn else "")
         for c in req.farm_context.cows
     ) or "- (없음)"
     return f"오늘: {req.today.isoformat()} ({'월화수목금토일'[req.today.weekday()]}요일)\n소 목록:\n{cows}\n\n발화: {normalize_tags(mask_phone(req.text))}"
-
-
-def _last4(tag: Optional[str]) -> Optional[str]:
-    if not tag:
-        return None
-    digits = "".join(ch for ch in tag if ch.isdigit())
-    return digits[-4:] if len(digits) >= 4 else None
 
 
 def _to_date(v: Optional[str], name: str) -> Optional[date]:
@@ -144,28 +139,53 @@ def _to_date(v: Optional[str], name: str) -> Optional[date]:
         raise RouteError("날짜 형식 오류", {"field": name, "value": v}) from e
 
 
+def _digits(tag: Optional[str]) -> str:
+    return "".join(ch for ch in tag if ch.isdigit()) if tag else ""
+
+
+def resolve_cow(tag: Optional[str], cows) -> tuple[Optional[str], Optional[str], Optional[str]]:
+    """말한 번호 → (끝 4자리, 12자리, 신고서 칸에 넣을 번호). 정할 수 없으면 (None, None, None).
+
+    규칙 (명세 변경 이력 11/20, mnm-ai#6)
+    - 끝 4자리가 같은 소가 1마리 → 그 소
+    - 2마리 이상 + 4자리만 말함 → 정할 수 없음
+    - 12자리를 말함 → 소 목록 tag 와 같은 소. 12자리를 모르는 소가 1마리뿐이면 끝 4자리로 맞춤
+    """
+    d = _digits(tag)
+    if len(d) < 4:
+        return None, None, None
+    t4 = d[-4:]
+    cands = [c for c in cows if c.tag4 == t4]
+    if len(d) == 12:
+        exact = [c for c in cands if c.tag == d]
+        if exact:
+            return t4, d, d
+        if len(cands) == 1 and cands[0].tag is None:
+            return t4, None, d
+        return None, None, None  # 12자리가 목록과 다르거나, 겹치는 소 중 어느 것도 아님
+    if len(cands) == 1:
+        return t4, cands[0].tag, t4
+    return None, None, None  # 없음 또는 끝 4자리만으로는 겹침
+
+
 def postprocess(out: LlmRoute, req: RouteRequest) -> RouteResponse:
-    """모델 출력 → 고정 출력. 개체번호를 소 목록과 대조한다 (명세: 없으면 null, missing 에 "cow")."""
-    known = {c.tag4 for c in req.farm_context.cows}
+    """모델 출력 → 고정 출력. 개체번호를 소 목록과 대조한다 (없거나 정할 수 없으면 null, missing 에 "cow")."""
+    cows = req.farm_context.cows
     missing: list[str] = []
 
-    def check_tag(tag: Optional[str]) -> Optional[str]:
-        """끝 4자리가 소 목록에 없으면 null, missing 에 "cow"."""
+    def check(tag: Optional[str]):
         if tag is None:
-            return None
-        t4 = _last4(tag)
-        if t4 in known:
-            return tag
-        if "cow" not in missing:
+            return None, None, None
+        r = resolve_cow(tag, cows)
+        if r[0] is None and "cow" not in missing:
             missing.append("cow")
-        return None
+        return r
 
     items = []
     for it in out.items:
         d = it.model_dump()
-        d["cow_tag4"] = check_tag(it.cow_tag4)
-        if d["cow_tag4"] is not None:
-            d["cow_tag4"] = _last4(d["cow_tag4"])
+        t4, t12, _ = check(it.cow_tag4)
+        d["cow_tag4"], d["cow_tag"] = t4, t12
         items.append(d)
 
     fields: dict = {}
@@ -177,18 +197,17 @@ def postprocess(out: LlmRoute, req: RouteRequest) -> RouteResponse:
         for k in ("birth_date", "death_date", "move_date"):
             if k in fields:
                 fields[k] = _to_date(fields[k], k)
+        subject = (None, None, None)
         for k in ("mother_tag4", "cow_tag"):
             if k in fields:
-                fields[k] = check_tag(fields[k])
-        if fields.get("mother_tag4") is not None:
-            fields["mother_tag4"] = _last4(fields["mother_tag4"])
+                subject = check(fields[k])
+                fields[k] = subject[2]  # 말한 번호 그대로 (4자리 또는 12자리)
         # 신고서 칸에만 번호가 있고 같은 종류의 일지 항목에는 빠진 경우 채운다
-        tag = fields.get("mother_tag4") or _last4(fields.get("cow_tag"))
         cat = {"birth": "출생", "death": "폐사", "move": "이동"}[out.report_type]
-        if tag:
+        if subject[0]:
             for d in items:
                 if d["category"] == cat and d["cow_tag4"] is None:
-                    d["cow_tag4"] = tag
+                    d["cow_tag4"], d["cow_tag"] = subject[0], subject[1]
 
     # 신고서 항목을 만들었으면 신고 흐름으로 보낸다 (모델이 intent 를 diary 로 둔 경우, 실측 3/50)
     intent = "history_report" if out.report_type is not None else out.intent
