@@ -66,7 +66,8 @@ PART_RUNS = [
     ("part/1st/yolov8n-cls", "1차: YOLOv8n-cls 직접 학습 (3부위)",
      {"model": "yolov8n-cls", "parts": "mouth,hoof,none", "finetune": "yes"},
      {"cv_accuracy": 0.966, "external_none_rate": 0.48},
-     "1차 실험 3부위, 시험 131장. external_none_rate: 외부 사진(럼피스킨 피부 197장)을 '해당 없음'으로 판정한 비율"),
+     ("1차 실험 3부위. cv_accuracy: 교차검증 정확도 (시험 131장 값이 아님). "
+      "external_none_rate: 외부 사진(럼피스킨 피부 197장)을 '해당 없음'으로 판정한 비율")),
     ("part/1st/clip-l14", "1차: CLIP ViT-L/14 제로샷 (3부위)",
      {"model": "CLIP ViT-L/14", "parts": "mouth,hoof,none", "finetune": "none (zero-shot)"},
      {"test_accuracy": 0.95, "cv5_accuracy": 0.82},
