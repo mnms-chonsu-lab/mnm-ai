@@ -14,8 +14,9 @@
 
 OpenAI Vision 사용 (대체 경로가 켜져 있을 때만. 켜기/끄기: 환경변수 PART_FALLBACK_VISION=1, 어드민 설정 A-S07)
 - 대체: SigLIP 2 추론 실패·시간 초과 → Vision 으로 판정 (fallback = true). Vision 도 실패하면 PART-FAIL
-- 재확인: SigLIP 2 가 요청 부위와 다르다고 하면 → Vision 으로 다시 판정하고 그 결과를 따른다 (fallback = true).
-  Vision 이 실패하면 SigLIP 2 결과를 그대로 돌려준다 (PART-FAIL 아님)
+- 재확인: SigLIP 2 결과가 나오면 Vision 도 항상 본다. Vision 이 실패하면 SigLIP 2 결과 그대로 (PART-FAIL 아님)
+  - SigLIP 2 가 요청 부위와 같다고 함 → Vision 이 none 이면 불통과(Vision 결과), 아니면 SigLIP 2 결과 그대로
+  - SigLIP 2 가 요청 부위와 다르다고 함 → Vision 결과를 따른다 (fallback = true)
 - Vision 은 4부위 또는 none(소 부위가 아님·알아볼 수 없음)을 고른다. none 이면 match = false
 - 두 단계 합쳐 TOTAL_BUDGET_SEC 안에 끝나도록 Vision 제한 시간을 남은 시간으로 줄인다
 """
@@ -129,7 +130,8 @@ def check_part(
 
     vision 이 주어지면
     - SigLIP 2 추론 실패·시간 초과 때 Vision 으로 판정한다 (대체, fallback = true)
-    - second_opinion 이면 SigLIP 2 가 요청 부위와 다르다고 한 사진을 Vision 으로 다시 판정한다 (재확인, fallback = true)
+    - second_opinion 이면 모든 사진을 Vision 으로 다시 본다. SigLIP 2 가 다르다고 했거나 Vision 이 none 이면
+      Vision 결과를 따른다 (재확인, fallback = true)
     """
     if requested_part not in PARTS:
         raise PartCheckError("bad_request", f"알 수 없는 부위: {requested_part}")
@@ -154,13 +156,17 @@ def check_part(
 
     k = int(np.argmax(p))
     siglip = _response(requested_part, PARTS[k], float(p[k]), threshold, quality, MODEL_VERSION, fallback=False)
-    if siglip.match or vision is None or not second_opinion:
+    if vision is None or not second_opinion:
         return siglip
-    # 재확인: SigLIP 2 가 "다른 부위"라고 한 사진만 Vision 이 다시 본다. 실패하면 SigLIP 2 결과 유지
+    # 재확인: 모든 사진을 Vision 이 다시 본다. Vision 이 실패하면 SigLIP 2 결과 유지
     try:
         predicted, score = vision.classify(std, timeout_sec=_vision_time_left(t0))
     except PartCheckError:
         return siglip
+    if siglip.match and predicted != NONE_PART:
+        # SigLIP 2 가 맞다고 했고 Vision 도 소 부위로 봤으면 SigLIP 2 결과 그대로 (Vision 이 다른 부위를 골라도 통과)
+        return siglip
+    # SigLIP 2 가 다르다고 했거나, Vision 이 소 부위가 아니라고(none) 했으면 Vision 결과를 따른다
     return _response(requested_part, predicted, score, threshold, quality, vision.model_version, fallback=True)
 
 

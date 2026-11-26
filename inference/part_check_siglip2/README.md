@@ -20,7 +20,7 @@ SigLIP 2 제로샷 기반 부위 일치 검증 모듈입니다. 농가가 찍은
 | 6. 판정 | 점수 1등 = `predicted_part`, `match` = 예측 부위가 요청 부위와 같고 점수 ≥ 기준값 |
 | 실패 | 사진을 열 수 없음·추론 오류·1.5초 초과 → `PART-FAIL` (서버는 판정 없이 진행) |
 | 대체 경로 | 추론 오류·1.5초 초과 때 `PART_FALLBACK_VISION=1`이면 OpenAI Vision으로 판정, `fallback: true`, 출력 형식 동일. 대체 경로도 실패하면 `PART-FAIL` |
-| 재확인 | SigLIP 2가 요청 부위와 **다르다**고 하면 OpenAI Vision이 다시 판정하고 그 결과를 따름 (`fallback: true`). Vision이 실패하면 SigLIP 2 결과 그대로. 요청 부위와 같다고 하면 Vision을 부르지 않음 |
+| 재확인 | SigLIP 2 결과가 나오면 OpenAI Vision도 항상 봄. SigLIP 2가 요청 부위와 **다르다**고 했거나 Vision이 `none`이면 Vision 결과를 따름(`fallback: true`). 그 밖에는 SigLIP 2 결과 그대로. Vision이 실패하면 SigLIP 2 결과 그대로 |
 | 해당 없음 | Vision은 4부위 외에 `none`(소 부위가 아님·알아볼 수 없음)을 고를 수 있음. `none`이면 `match: false` |
 | 시간 | SigLIP 2 + Vision 합계 `TOTAL_BUDGET_SEC` 9초 안에서 Vision 제한 시간을 남은 시간으로 줄임. 남은 시간이 1초 미만이면 Vision을 부르지 않음 (제안값, 실측으로 조정) |
 

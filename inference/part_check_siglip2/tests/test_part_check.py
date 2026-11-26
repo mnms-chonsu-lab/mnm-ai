@@ -189,9 +189,10 @@ def test_fallback_on_model_error():
 def test_no_fallback_when_siglip_ok_or_photo_broken():
     v = FakeVision()
     assert pc.check_part(_jpg((60, 60, 200)), "hoof", FakeEmbedder(), timeout_sec=None, vision=v).fallback is False
+    assert v.called == 1  # 재확인은 항상 부르지만 SigLIP 2 결과를 유지
     with pytest.raises(pc.PartCheckError):
         pc.check_part(b"not an image", "hoof", FakeEmbedder(), vision=v)
-    assert v.called == 0
+    assert v.called == 1  # 사진을 못 열면 부르지 않음
 
 
 def test_vision_fallback_client_call():
@@ -237,10 +238,24 @@ def test_second_opinion_agrees_mismatch():
     assert out.match is False and out.predicted_part == "mouth" and out.fallback is True
 
 
-def test_second_opinion_not_called_when_siglip_matches():
+def test_siglip_match_kept_when_vision_sees_a_part():
+    """SigLIP 2 가 맞다고 하면 Vision 이 다른 부위를 골라도 통과 (SigLIP 2 결과 유지)."""
+    v = FakeVision("mouth", 0.9)
+    out = pc.check_part(_jpg(BLUE), "hoof", FakeEmbedder(), timeout_sec=None, vision=v)
+    assert v.called == 1 and out.match is True and out.fallback is False and out.model_version == pc.MODEL_VERSION
+
+
+def test_siglip_match_vetoed_by_vision_none():
+    """벽·바닥 사진을 SigLIP 2 가 우연히 요청 부위로 골라도 Vision 이 none 이면 불통과 (#23 리뷰)."""
     v = FakeVision("none", 0.9)
     out = pc.check_part(_jpg(BLUE), "hoof", FakeEmbedder(), timeout_sec=None, vision=v)
-    assert v.called == 0 and out.match is True and out.fallback is False and out.model_version == pc.MODEL_VERSION
+    assert v.called == 1 and out.match is False and out.predicted_part == "none" and out.fallback is True
+
+
+def test_siglip_match_kept_when_vision_fails():
+    v = FakeVision(fail=True)
+    out = pc.check_part(_jpg(BLUE), "hoof", FakeEmbedder(), timeout_sec=None, vision=v)
+    assert out.match is True and out.fallback is False
 
 
 def test_second_opinion_failure_keeps_siglip_result():
