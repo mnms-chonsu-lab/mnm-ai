@@ -27,6 +27,7 @@ import base64
 import io
 import os
 import time
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
 from typing import Literal, Optional, Protocol, Sequence, Union
 
 import numpy as np
@@ -131,7 +132,7 @@ def check_part(
     vision 이 주어지면
     - SigLIP 2 추론 실패·시간 초과 때 Vision 으로 판정한다 (대체, fallback = true)
     - second_opinion 이면 모든 사진을 Vision 으로 다시 본다. SigLIP 2 가 다르다고 했거나 Vision 이 none 이면
-      Vision 결과를 따른다 (재확인, fallback = true)
+      Vision 결과를 따른다 (재확인, fallback = true). Vision 은 SigLIP 2 와 동시에 부른다
     """
     if requested_part not in PARTS:
         raise PartCheckError("bad_request", f"알 수 없는 부위: {requested_part}")
@@ -139,6 +140,8 @@ def check_part(
     img = open_image(src)
     quality = check_quality(img)
     std = standardize(img)
+    # 재확인을 하면 Vision 을 SigLIP 2 와 동시에 시작한다 → 확인 시간 = 둘 중 긴 쪽 (#24)
+    pending = _start_vision(vision, std, t0) if (vision is not None and second_opinion) else None
     try:
         try:
             emb = embedder.encode_image(std)
@@ -151,16 +154,19 @@ def check_part(
         if vision is None:
             raise
         # 대체: SigLIP 2 결과가 없으므로 Vision 실패는 그대로 PART-FAIL
-        predicted, score = vision.classify(std, timeout_sec=_vision_time_left(t0))
+        if pending is not None:
+            predicted, score = _wait_vision(pending)
+        else:
+            predicted, score = vision.classify(std, timeout_sec=_vision_time_left(t0))
         return _response(requested_part, predicted, score, threshold, quality, vision.model_version, fallback=True)
 
     k = int(np.argmax(p))
     siglip = _response(requested_part, PARTS[k], float(p[k]), threshold, quality, MODEL_VERSION, fallback=False)
-    if vision is None or not second_opinion:
+    if pending is None:
         return siglip
-    # 재확인: 모든 사진을 Vision 이 다시 본다. Vision 이 실패하면 SigLIP 2 결과 유지
+    # 재확인: Vision 이 실패하면 SigLIP 2 결과 유지
     try:
-        predicted, score = vision.classify(std, timeout_sec=_vision_time_left(t0))
+        predicted, score = _wait_vision(pending)
     except PartCheckError:
         return siglip
     if siglip.match and predicted != NONE_PART:
@@ -168,6 +174,35 @@ def check_part(
         return siglip
     # SigLIP 2 가 다르다고 했거나, Vision 이 소 부위가 아니라고(none) 했으면 Vision 결과를 따른다
     return _response(requested_part, predicted, score, threshold, quality, vision.model_version, fallback=True)
+
+
+# Vision 호출(네트워크 대기)용. 서버는 부위 확인을 한 번에 하나씩 처리하므로(part_lock) 작게 둔다
+_VISION_POOL = ThreadPoolExecutor(max_workers=4, thread_name_prefix="part-vision")
+_WAIT_MARGIN_SEC = 0.5  # Vision 자체 제한 시간 뒤 결과를 기다리는 여유
+
+
+def _start_vision(vision: "VisionFallback", std: Image.Image, t0: float):
+    """Vision 호출을 백그라운드로 시작한다. 시간 예산이 없으면 None 대신 실패를 담아 돌려준다."""
+    try:
+        limit = _vision_time_left(t0)
+    except PartCheckError as e:
+        return (None, e, 0.0)
+    return (_VISION_POOL.submit(vision.classify, std, limit), None, limit)
+
+
+def _wait_vision(pending) -> tuple[str, float]:
+    """_start_vision 결과를 기다린다. 실패·시간 초과는 PartCheckError("fallback")."""
+    fut, err, limit = pending
+    if err is not None:
+        raise err
+    try:
+        return fut.result(timeout=limit + _WAIT_MARGIN_SEC)
+    except PartCheckError:
+        raise
+    except FutureTimeout as e:
+        raise PartCheckError("fallback", f"대체 경로 {limit:.1f}초 초과") from e
+    except Exception as e:
+        raise PartCheckError("fallback", f"대체 경로 호출 실패: {type(e).__name__}") from e
 
 
 def _vision_time_left(t0: float) -> float:

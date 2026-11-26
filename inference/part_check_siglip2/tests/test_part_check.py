@@ -313,3 +313,64 @@ def test_vision_client_accepts_none_and_shorter_timeout():
     assert c.opts["timeout"] == 3.0 and c.opts["max_retries"] == 0
     pc.VisionFallback(c).classify(Image.new("RGB", (512, 512)), timeout_sec=30.0)
     assert c.opts["timeout"] == pc.VISION_TIMEOUT_SEC  # 더 길게는 못 늘린다
+
+
+# --- 동시 호출: Vision 을 SigLIP 2 와 같이 시작 (#24) ------------------------------
+import time as _time
+
+
+class SlowEmbedder(FakeEmbedder):
+    def __init__(self, sec):
+        super().__init__()
+        self.sec = sec
+
+    def encode_image(self, img):
+        _time.sleep(self.sec)
+        return super().encode_image(img)
+
+
+class SlowVision(FakeVision):
+    def __init__(self, sec, *a, **kw):
+        super().__init__(*a, **kw)
+        self.sec = sec
+
+    def classify(self, img, timeout_sec=None):
+        _time.sleep(self.sec)
+        return super().classify(img, timeout_sec)
+
+
+def test_vision_runs_in_parallel_with_siglip():
+    t = _time.perf_counter()
+    out = pc.check_part(_jpg(RED), "hoof", SlowEmbedder(0.4), timeout_sec=None, vision=SlowVision(0.4, "hoof", 0.9))
+    took = _time.perf_counter() - t
+    assert out.match is True and out.fallback is True
+    assert took < 0.7, f"합(0.8초)보다 짧아야 함: {took:.2f}초"
+
+
+def test_parallel_vision_used_as_fallback_on_siglip_error():
+    class Boom(FakeEmbedder):
+        def encode_image(self, img):
+            raise RuntimeError("siglip down")
+
+    v = FakeVision("hoof", 0.8)
+    out = pc.check_part(_jpg(RED), "hoof", Boom(), timeout_sec=None, vision=v)
+    assert v.called == 1 and out.fallback is True and out.match is True
+
+
+def test_parallel_vision_unexpected_error_keeps_siglip():
+    class Crash(FakeVision):
+        def classify(self, img, timeout_sec=None):
+            raise RuntimeError("boom")
+
+    out = pc.check_part(_jpg(BLUE), "hoof", FakeEmbedder(), timeout_sec=None, vision=Crash())
+    assert out.match is True and out.fallback is False
+
+
+def test_parallel_vision_hang_keeps_siglip(monkeypatch):
+    monkeypatch.setattr(pc, "TOTAL_BUDGET_SEC", 0.3)
+    monkeypatch.setattr(pc, "MIN_VISION_SEC", 0.1)
+    monkeypatch.setattr(pc, "_WAIT_MARGIN_SEC", 0.1)
+    t = _time.perf_counter()
+    out = pc.check_part(_jpg(RED), "hoof", FakeEmbedder(), timeout_sec=None, vision=SlowVision(2.0, "hoof", 0.9))
+    assert _time.perf_counter() - t < 1.0
+    assert out.fallback is False and out.predicted_part == "mouth"
