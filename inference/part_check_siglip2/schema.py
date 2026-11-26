@@ -28,12 +28,14 @@ class Quality(_Strict):
 
 class PartCheckResponse(_Strict):
     requested_part: Part
-    predicted_part: Part = Field(description="모델이 고른 부위. 로그·어드민용, 농가 화면에 노출하지 않음")
-    match: bool = Field(description="predicted_part == requested_part 그리고 score >= 기준값")
-    score: float = Field(ge=0, le=1, description="predicted_part 의 점수 softmax(100 × 코사인)")
+    predicted_part: Literal["mouth", "udder", "hoof", "flank", "none"] = Field(
+        description='모델이 고른 부위. "none" = 소 부위가 아님·알아볼 수 없음 (OpenAI Vision 만 냄). 로그·어드민·접수자용, 농가 화면에 노출하지 않음'
+    )
+    match: bool = Field(description='predicted_part == requested_part 그리고 score >= 기준값. "none" 이면 false')
+    score: float = Field(ge=0, le=1, description="predicted_part 의 점수. SigLIP 2 는 softmax(100 × 코사인), fallback = true 면 Vision 이 매긴 확신도")
     quality: Quality
     model_version: str
-    fallback: bool = Field(default=False, description="대체 경로(OpenAI Vision) 사용 여부")
+    fallback: bool = Field(default=False, description="OpenAI Vision 결과 여부 (SigLIP 2 실패·시간 초과 때 대체, 또는 SigLIP 2 가 다른 부위라고 해서 재확인)")
 
 
 class PartCheckErrorResponse(_Strict):

@@ -20,6 +20,9 @@ SigLIP 2 제로샷 기반 부위 일치 검증 모듈입니다. 농가가 찍은
 | 6. 판정 | 점수 1등 = `predicted_part`, `match` = 예측 부위가 요청 부위와 같고 점수 ≥ 기준값 |
 | 실패 | 사진을 열 수 없음·추론 오류·1.5초 초과 → `PART-FAIL` (서버는 판정 없이 진행) |
 | 대체 경로 | 추론 오류·1.5초 초과 때 `PART_FALLBACK_VISION=1`이면 OpenAI Vision으로 판정, `fallback: true`, 출력 형식 동일. 대체 경로도 실패하면 `PART-FAIL` |
+| 재확인 | SigLIP 2 결과가 나오면 OpenAI Vision도 항상 봄. SigLIP 2가 요청 부위와 **다르다**고 했거나 Vision이 `none`이면 Vision 결과를 따름(`fallback: true`). 그 밖에는 SigLIP 2 결과 그대로. Vision이 실패하면 SigLIP 2 결과 그대로 |
+| 해당 없음 | Vision은 4부위 외에 `none`(소 부위가 아님·알아볼 수 없음)을 고를 수 있음. `none`이면 `match: false` |
+| 시간 | SigLIP 2 + Vision 합계 `TOTAL_BUDGET_SEC` 9초 안에서 Vision 제한 시간을 남은 시간으로 줄임. 남은 시간이 1초 미만이면 Vision을 부르지 않음 (제안값, 실측으로 조정) |
 
 ## 출력 예시
 
@@ -40,7 +43,7 @@ SigLIP 2 제로샷 기반 부위 일치 검증 모듈입니다. 농가가 찍은
 | `predicted_part` | 4부위 중 점수 1등. 로그·어드민용 (농가 화면에는 노출하지 않음) |
 | `score` | `predicted_part`의 점수 (0–1). 4부위 softmax라 항상 0.25 이상 |
 | `quality` | 화질 판정. 부위 판정과 별개로 항상 함께 반환 |
-| `fallback` | 대체 경로(OpenAI Vision) 사용 여부. `true`일 때 `score`는 모델이 스스로 매긴 확신도(0–1)이며 SigLIP 2 점수와 같은 척도가 아님 |
+| `fallback` | OpenAI Vision 결과 여부(대체 또는 재확인). `true`일 때 `score`는 모델이 스스로 매긴 확신도(0–1)이며 SigLIP 2 점수와 같은 척도가 아님 |
 
 ---
 
