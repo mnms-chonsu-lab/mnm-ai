@@ -154,12 +154,15 @@ def test_quality_blurred():
 class FakeVision:
     model_version = "vision-fake"
 
-    def __init__(self, part="hoof", conf=0.8):
-        self.part, self.conf, self.called = part, conf, 0
+    def __init__(self, part="hoof", conf=0.8, fail=False):
+        self.part, self.conf, self.fail, self.called, self.limits = part, conf, fail, 0, []
 
-    def classify(self, img):
+    def classify(self, img, timeout_sec=None):
         self.called += 1
+        self.limits.append(timeout_sec)
         assert img.size == (pc.STD_SIZE, pc.STD_SIZE)
+        if self.fail:
+            raise pc.PartCheckError("fallback", "fake fail")
         return self.part, self.conf
 
 
@@ -214,3 +217,84 @@ def test_vision_fallback_client_call():
 def test_load_vision_off_by_default(monkeypatch):
     monkeypatch.delenv("PART_FALLBACK_VISION", raising=False)
     assert pc.load_vision() is None
+
+
+# --- 재확인: SigLIP 2 가 다른 부위라고 한 사진만 Vision 이 다시 본다 -----------------
+# FakeEmbedder: 빨강 → mouth, 파랑 → hoof
+RED, BLUE = (200, 60, 60), (60, 60, 200)
+
+
+def test_second_opinion_overrides_mismatch():
+    v = FakeVision("hoof", 0.9)
+    out = pc.check_part(_jpg(RED), "hoof", FakeEmbedder(), timeout_sec=None, vision=v)
+    assert v.called == 1 and out.match is True and out.predicted_part == "hoof"
+    assert out.fallback is True and out.model_version == "vision-fake" and out.score == 0.9
+
+
+def test_second_opinion_agrees_mismatch():
+    v = FakeVision("mouth", 0.9)
+    out = pc.check_part(_jpg(RED), "hoof", FakeEmbedder(), timeout_sec=None, vision=v)
+    assert out.match is False and out.predicted_part == "mouth" and out.fallback is True
+
+
+def test_second_opinion_not_called_when_siglip_matches():
+    v = FakeVision("none", 0.9)
+    out = pc.check_part(_jpg(BLUE), "hoof", FakeEmbedder(), timeout_sec=None, vision=v)
+    assert v.called == 0 and out.match is True and out.fallback is False and out.model_version == pc.MODEL_VERSION
+
+
+def test_second_opinion_failure_keeps_siglip_result():
+    v = FakeVision(fail=True)
+    out = pc.check_part(_jpg(RED), "hoof", FakeEmbedder(), timeout_sec=None, vision=v)
+    assert v.called == 1 and out.fallback is False and out.predicted_part == "mouth" and out.match is False
+
+
+def test_second_opinion_can_be_turned_off():
+    v = FakeVision("hoof", 0.9)
+    out = pc.check_part(_jpg(RED), "hoof", FakeEmbedder(), timeout_sec=None, vision=v, second_opinion=False)
+    assert v.called == 0 and out.match is False and out.fallback is False
+
+
+def test_vision_none_is_never_match():
+    out = pc.check_part(_jpg(RED), "hoof", FakeEmbedder(), timeout_sec=None, vision=FakeVision("none", 0.95))
+    assert out.predicted_part == "none" and out.match is False and out.fallback is True
+    PartCheckResponse.model_validate(out.model_dump())  # 형식 통과
+
+
+def test_fallback_vision_failure_is_part_fail():
+    """SigLIP 2 가 시간 초과인데 Vision 도 실패하면 돌려줄 결과가 없으므로 PART-FAIL."""
+    with pytest.raises(pc.PartCheckError) as e:
+        pc.check_part(_jpg(RED), "hoof", FakeEmbedder(), timeout_sec=0.0, vision=FakeVision(fail=True))
+    assert e.value.reason == "fallback"
+
+
+def test_vision_gets_remaining_budget(monkeypatch):
+    v = FakeVision("hoof", 0.9)
+    pc.check_part(_jpg(RED), "hoof", FakeEmbedder(), timeout_sec=None, vision=v)
+    assert v.limits and 0 < v.limits[0] <= pc.VISION_TIMEOUT_SEC
+    # 예산이 거의 없으면 Vision 을 부르지 않고 SigLIP 2 결과를 돌려준다
+    monkeypatch.setattr(pc, "TOTAL_BUDGET_SEC", 0.5)
+    v2 = FakeVision("hoof", 0.9)
+    out = pc.check_part(_jpg(RED), "hoof", FakeEmbedder(), timeout_sec=None, vision=v2)
+    assert v2.called == 0 and out.fallback is False and out.predicted_part == "mouth"
+
+
+def test_vision_client_accepts_none_and_shorter_timeout():
+    from types import SimpleNamespace
+
+    class C:
+        def __init__(self):
+            self.responses = self
+
+        def with_options(self, **kw):
+            self.opts = kw
+            return self
+
+        def parse(self, **kw):
+            return SimpleNamespace(status="completed", output_parsed=kw["text_format"](part="none", confidence=0.7))
+
+    c = C()
+    assert pc.VisionFallback(c).classify(Image.new("RGB", (512, 512)), timeout_sec=3.0) == ("none", 0.7)
+    assert c.opts["timeout"] == 3.0 and c.opts["max_retries"] == 0
+    pc.VisionFallback(c).classify(Image.new("RGB", (512, 512)), timeout_sec=30.0)
+    assert c.opts["timeout"] == pc.VISION_TIMEOUT_SEC  # 더 길게는 못 늘린다
