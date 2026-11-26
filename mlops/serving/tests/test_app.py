@@ -541,3 +541,36 @@ def test_inference_log_http_status_for_404_and_503(make_client):
     assert [(r["feature"], r["http_status"], r["error"]) for r in rows] == [
         ("guide", 404, "RAG-NONE"), ("behavior", 503, down.json()["code"])]
 
+
+
+# ---------------------------------------------------------------------------- 호출 기록 모델 이름 (#26)
+class _FakeVision:
+    model_version = "vision-fake"
+
+    def __init__(self, part):
+        self.part = part
+
+    def classify(self, img, timeout_sec=None):
+        return self.part, 0.9
+
+
+def _call_lines(caplog):
+    return [json.loads(rec.getMessage()) for rec in caplog.records if rec.name == "mnm_ai.calls"]
+
+
+@pytest.mark.parametrize("vision_part, expected", [
+    ("none", "vision-fake"),     # Vision 결과를 따름 → 기록도 Vision
+    ("mouth", None),             # SigLIP 2 결과 유지 → 기록도 SigLIP 2
+])
+def test_part_check_log_uses_actual_model_version(make_client, caplog, vision_part, expected):
+    import logging
+
+    from part_check_siglip2 import part_check as part_mod
+    with caplog.at_level(logging.INFO, logger="mnm_ai.calls"):
+        with make_client(vision=_FakeVision(vision_part)) as c:
+            r = c.post("/ai/part-check", json={"image_url": f"https://{STORAGE}/b/cow.png", "requested_part": "mouth"},
+                       headers=H)
+    assert r.status_code == 200, r.text
+    lines = [ln for ln in _call_lines(caplog) if ln["feature"] == "part_check"]
+    assert len(lines) == 1
+    assert lines[0]["model_version"] == r.json()["model_version"] == (expected or part_mod.MODEL_VERSION)
