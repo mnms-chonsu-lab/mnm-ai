@@ -35,7 +35,7 @@ class PartCheckResponse(_Strict):
     score: float = Field(ge=0, le=1, description="predicted_part 의 점수. SigLIP 2 는 softmax(100 × 코사인), fallback = true 면 Vision 이 매긴 확신도")
     quality: Quality
     model_version: str
-    fallback: bool = Field(default=False, description="OpenAI Vision 결과 여부 (SigLIP 2 실패·시간 초과 때 대체, 또는 SigLIP 2 가 다른 부위라고 해서 재확인)")
+    fallback: bool = Field(default=False, description="OpenAI Vision 결과 여부. SigLIP 2 실패·시간 초과 때 대체, 또는 재확인에서 SigLIP 2 가 다른 부위라고 했거나 Vision 이 none(소 부위가 아님)이라고 해서 Vision 결과를 따른 경우")
 
 
 class PartCheckErrorResponse(_Strict):
