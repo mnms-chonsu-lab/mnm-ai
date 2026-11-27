@@ -150,6 +150,10 @@ def create_app(settings: Optional[Settings] = None, models: Optional[Models] = N
         headers = {"X-Request-Id": rid}
         status = status_for(feature, result.code, result.detail) if isinstance(result, AiErrorResponse) else 200
         if done:
+            # 결과가 실제 모델 이름을 알고 있으면 그 값으로 남긴다 (부위 확인: Vision 결과를 따른 경우, mnm-ai#26)
+            actual = getattr(result, "model_version", None)
+            if actual:
+                done[0]["model_version"] = actual
             record(done[0], status)
         if isinstance(result, AiErrorResponse):
             return JSONResponse(status_code=status, content=result.model_dump(), headers=headers)
